@@ -879,6 +879,15 @@ const isAppPacked = app.isPackaged;
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
 
+// 显式设置更新源地址（确保始终指向正确的 GitHub 仓库）
+const GITHUB_OWNER = 'qwerwhr';
+const GITHUB_REPO = 'AudioVisual';
+autoUpdater.setFeedURL({
+  provider: 'github',
+  owner: GITHUB_OWNER,
+  repo: GITHUB_REPO
+});
+
 // 添加日志以便调试（如果 electron-log 可用）
 try {
   autoUpdater.logger = require('electron-log');
@@ -898,7 +907,7 @@ function initializeAutoUpdater() {
 
   console.log('[AutoUpdater] Initializing auto updater...');
   console.log('[AutoUpdater] Current version:', app.getVersion());
-  console.log('[AutoUpdater] Update feed URL:', `https://github.com/${autoUpdater.getFeedURL?.() || 'RemotePinee/AudioVisual'}`);
+  console.log('[AutoUpdater] Update feed URL:', `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`);
 
   autoUpdater.on('checking-for-update', () => {
     console.log('[AutoUpdater] Checking for updates...');
