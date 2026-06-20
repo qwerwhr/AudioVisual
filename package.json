@@ -30,7 +30,7 @@
     "appId": "com.void.player",
     "publish": {
       "provider": "github",
-      "owner": "RemotePineapple",
+      "owner": "qwerwhr",
       "repo": "AudioVisual"
     },
     "productName": "AudioVisual",
