@@ -5,6 +5,7 @@ const { app, screen, BrowserWindow, BrowserView, ipcMain, session, shell, dialog
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { autoUpdater } = require('electron-updater');
 
 // --- Debounce Utility ---
 function debounce(func, wait) {
@@ -870,7 +871,6 @@ ipcMain.on('quit-and-install', () => {
 });
 
 // --- Auto Updater ---
-const { autoUpdater } = require('electron-updater');
 
 // 检测是否为开发模式（应用未打包）
 const isAppPacked = app.isPackaged;
