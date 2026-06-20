@@ -1125,6 +1125,135 @@ document.addEventListener('DOMContentLoaded', () => {
 
         setTimeout(updateSidebarScale, 100);
     }
+
+    // === 镜像选择对话框逻辑 ===
+    const mirrorDialog = document.getElementById('mirror-dialog');
+    const mirrorList = document.getElementById('mirror-list');
+    const mirrorCustom = document.getElementById('mirror-custom');
+    const mirrorCustomUrl = document.getElementById('mirror-custom-url');
+    const mirrorCancel = document.getElementById('mirror-cancel');
+    const mirrorConfirm = document.getElementById('mirror-confirm');
+    const manualUpdateDialog = document.getElementById('manual-update-dialog');
+    const manualUpdateTitle = document.getElementById('manual-update-title');
+    const manualUpdateFilename = document.getElementById('manual-update-filename');
+    const manualUpdateProgressBar = document.getElementById('manual-update-progress-bar');
+    const manualUpdateProgressText = document.getElementById('manual-update-progress-text');
+    const manualUpdateCancel = document.getElementById('manual-update-cancel');
+
+    const MIRROR_NODES = [
+        { id: 'github', name: '官方源 (GitHub)', desc: '官方源，需网络连通 GitHub', type: 'github' },
+        { id: 'gitcode', name: 'GitCode 镜像', desc: '国内节点，速度较快', type: 'generic', url: 'https://gitcode.com/qwerwhr/AudioVisual-releases/raw/main/' },
+        { id: 'custom', name: '自定义镜像', desc: '输入自定义镜像地址', type: 'custom' }
+    ];
+
+    let selectedMirrorId = 'github';
+    let manualUpdateCanceled = false;
+
+    function renderMirrorList() {
+        mirrorList.innerHTML = '';
+        MIRROR_NODES.forEach(node => {
+            const item = document.createElement('div');
+            item.className = 'mirror-item' + (selectedMirrorId === node.id ? ' selected' : '');
+            item.dataset.id = node.id;
+            item.innerHTML = `
+                <div class="mirror-item-radio"></div>
+                <div class="mirror-item-info">
+                    <div class="mirror-item-name">${node.name}</div>
+                    <div class="mirror-item-desc">${node.desc}</div>
+                </div>
+            `;
+            item.addEventListener('click', () => {
+                selectedMirrorId = node.id;
+                renderMirrorList();
+                if (node.id === 'custom') {
+                    mirrorCustom.style.display = 'block';
+                } else {
+                    mirrorCustom.style.display = 'none';
+                }
+            });
+            mirrorList.appendChild(item);
+        });
+    }
+
+    function showMirrorDialog() {
+        selectedMirrorId = 'github';
+        renderMirrorList();
+        mirrorCustom.style.display = 'none';
+        mirrorCustomUrl.value = '';
+        mirrorDialog.style.display = 'flex';
+    }
+
+    function hideMirrorDialog() {
+        mirrorDialog.style.display = 'none';
+    }
+
+    mirrorCancel.addEventListener('click', hideMirrorDialog);
+
+    mirrorConfirm.addEventListener('click', () => {
+        const selectedNode = MIRROR_NODES.find(n => n.id === selectedMirrorId);
+        if (!selectedNode) return;
+
+        let mirrorConfig = { type: selectedNode.type };
+        if (selectedNode.type === 'github') {
+            mirrorConfig.owner = 'qwerwhr';
+            mirrorConfig.repo = 'AudioVisual';
+        } else if (selectedNode.type === 'generic') {
+            mirrorConfig.url = selectedNode.url;
+        } else if (selectedNode.type === 'custom') {
+            const url = mirrorCustomUrl.value.trim();
+            if (!url) {
+                alert('请输入自定义镜像地址');
+                return;
+            }
+            mirrorConfig.url = url;
+        }
+
+        hideMirrorDialog();
+        showUpdateNotification('⏳ 正在使用选定节点检查更新...', 'info', true);
+        checkUpdateButton.disabled = true;
+        checkUpdateButton.textContent = '检查中...';
+
+        window.voidAPI.setUpdateMirror(mirrorConfig).then(() => {
+            window.voidAPI.checkForUpdates();
+        }).catch(err => {
+            console.error('[Renderer] Set mirror failed:', err);
+            checkUpdateButton.disabled = false;
+            checkUpdateButton.textContent = '检查更新';
+            showUpdateNotification('⚠️ 设置镜像失败：' + (err.message || err), 'error', false);
+        });
+    });
+
+    // 监听主进程发来的更新超时事件，自动弹出镜像选择对话框
+    window.voidAPI.onUpdateTimeout(() => {
+        showMirrorDialog();
+    });
+
+    // 监听手动更新下载进度
+    window.voidAPI.onManualUpdateProgress((progress) => {
+        if (!manualUpdateDialog || !manualUpdateProgressBar || !manualUpdateProgressText) return;
+        manualUpdateDialog.style.display = 'flex';
+        const percent = Math.floor(progress.percent || 0);
+        manualUpdateProgressBar.style.width = percent + '%';
+        const downloaded = (progress.transferred || progress.transferred || 0) / 1024 / 1024;
+        const total = (progress.total || 0) / 1024 / 1024;
+        manualUpdateProgressText.textContent = `${percent}% (${downloaded.toFixed(1)}MB / ${total.toFixed(1)}MB)`;
+    });
+
+    // 监听手动更新下载完成
+    window.voidAPI.onManualUpdateDownloaded((info) => {
+        if (!manualUpdateDialog || !manualUpdateTitle || !manualUpdateProgressText || !manualUpdateCancel) return;
+        manualUpdateTitle.textContent = '更新已下载完成';
+        manualUpdateProgressText.textContent = '点击"立即安装"按钮重启应用以应用更新';
+        manualUpdateCancel.textContent = '立即安装';
+        manualUpdateCancel.onclick = () => {
+            window.voidAPI.quitAndInstall();
+        };
+    });
+
+    manualUpdateCancel.addEventListener('click', () => {
+        manualUpdateCanceled = true;
+        if (manualUpdateDialog) manualUpdateDialog.style.display = 'none';
+    });
 });
 
 initialize();

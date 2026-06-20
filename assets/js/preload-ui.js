@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld('voidAPI', {
   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', (event, ...args) => callback(...args)),
   onUpdateError: (callback) => ipcRenderer.on('update-error', (event, ...args) => callback(...args)),
   onUpdateDevMode: (callback) => ipcRenderer.on('update-dev-mode', (event, ...args) => callback(...args)),
+  // 镜像选择相关
+  setUpdateMirror: (config) => ipcRenderer.invoke('set-update-mirror', config),
+  onUpdateTimeout: (callback) => ipcRenderer.on('update-timeout', (event, ...args) => callback(...args)),
+  // 手动更新（镜像下载）相关
+  onManualUpdateProgress: (callback) => ipcRenderer.on('manual-update-progress', (event, ...args) => callback(...args)),
+  onManualUpdateDownloaded: (callback) => ipcRenderer.on('manual-update-downloaded', (event, ...args) => callback(...args)),
   closeWindow: () => ipcRenderer.send('close-window'),
   toggleSidebar: (isCollapsed) => ipcRenderer.send('sidebar-toggle', isCollapsed),
 

@@ -430,6 +430,59 @@
             </div>
         </div>
     </div>
+
+    <!-- 镜像选择对话框 -->
+    <div id="mirror-dialog" class="modal-overlay" style="display: none;">
+        <div class="modal-container" style="max-width: 480px;">
+            <div class="modal-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 16.65 2.24"></path>
+                    <line x1="12" y1="2" x2="12" y2="12"></line>
+                    <path d="M16 12l-4 4-4-4"></path>
+                </svg>
+                <h3>选择更新镜像节点</h3>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 12px; color: var(--text-secondary); font-size: 13px;">
+                    检测到更新超时，请选择镜像节点后重试：
+                </p>
+                <div id="mirror-list" class="mirror-list"></div>
+                <div id="mirror-custom" style="margin-top: 12px; display: none;">
+                    <input type="text" id="mirror-custom-url" placeholder="请输入自定义镜像地址（含 https://）" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary);">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="mirror-cancel" class="modal-button secondary">取消</button>
+                <button id="mirror-confirm" class="modal-button primary">使用此节点并更新</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 手动更新下载进度对话框 -->
+    <div id="manual-update-dialog" class="modal-overlay" style="display: none;">
+        <div class="modal-container" style="max-width: 420px;">
+            <div class="modal-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <h3 id="manual-update-title">正在下载更新</h3>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <div id="manual-update-filename" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;"></div>
+                <div class="progress-bar-container" style="width: 100%; height: 8px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
+                    <div id="manual-update-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-color), var(--accent-hover)); border-radius: 4px; transition: width 0.3s ease;"></div>
+                </div>
+                <div id="manual-update-progress-text" style="font-size: 12px; color: var(--text-muted);">准备下载...</div>
+            </div>
+            <div class="modal-footer">
+                <button id="manual-update-cancel" class="modal-button secondary">取消下载</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

@@ -7,6 +7,16 @@ const fs = require('fs');
 const os = require('os');
 const { autoUpdater } = require('electron-updater');
 
+// --- 镜像节点配置 ---
+const MIRROR_NODES = {
+  github:  { type: 'github',  owner: 'qwerwhr', repo: 'AudioVisual' },
+  gitcode: { type: 'generic', url: 'https://gitcode.com/qwerwhr/AudioVisual-releases/raw/main/' },
+  custom: { type: 'custom',  url: null }
+};
+let currentMirrorType = 'github';
+let currentMirrorURL = null;  // 仅 custom 类型时使用
+let manualUpdateInfo = null;  // 手动更新时的版本信息
+
 // --- Debounce Utility ---
 function debounce(func, wait) {
   let timeout;
@@ -870,6 +880,183 @@ ipcMain.on('quit-and-install', () => {
   autoUpdater.quitAndInstall();
 });
 
+// --- 镜像选择 IPC ---
+ipcMain.handle('set-update-mirror', (event, config) => {
+  console.log('[AutoUpdater] Setting mirror:', config);
+  if (config.type === 'github') {
+    currentMirrorType = 'github';
+    currentMirrorURL = null;
+  } else if (config.type === 'generic') {
+    currentMirrorType = 'generic';
+    currentMirrorURL = config.url;
+  } else if (config.type === 'custom') {
+    currentMirrorType = 'custom';
+    currentMirrorURL = config.url;
+  } else {
+    throw new Error('未知的镜像类型: ' + config.type);
+  }
+
+  // 重新配置 autoUpdater
+  configureAutoUpdater();
+  isUpdaterInitialized = false; // 强制重新初始化
+  if (isAppPacked) {
+    initializeAutoUpdater();
+  }
+
+  return { success: true, type: currentMirrorType, url: currentMirrorURL };
+});
+
+// --- 手动更新（当 electron-updater 不可用时） ---
+let manualUpdateDownload = null;
+
+ipcMain.handle('manual-check-update', async (event, mirrorURL) => {
+  console.log('[ManualUpdate] Checking for updates via mirror:', mirrorURL);
+  // 获取当前版本
+  const currentVersion = app.getVersion();
+  // 尝试获取 latest.yml
+  const url = mirrorURL + 'latest.yml';
+  console.log('[ManualUpdate] Fetching:', url);
+
+  return new Promise((resolve, reject) => {
+    const request = net.request({
+      method: 'GET',
+      url: url,
+      session: session.defaultSession
+    });
+
+    let data = '';
+    request.on('response', (response) => {
+      if (response.statusCode !== 200) {
+        return reject(new Error('获取 latest.yml 失败，状态码: ' + response.statusCode));
+      }
+
+      response.on('data', (chunk) => { data += chunk; });
+      response.on('end', () => {
+        try {
+          // 简单解析 YAML（只解析 version 和 files)
+          const versionMatch = data.match(/version:\s*(.+)/);
+          if (!versionMatch) {
+            return reject(new Error('无法解析 latest.yml'));
+          }
+          const latestVersion = versionMatch[1].trim();
+          console.log('[ManualUpdate] Current:', currentVersion, 'Latest:', latestVersion);
+
+          // 简单版本比较
+          const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
+
+          if (hasUpdate) {
+            // 获取文件名
+            const fileMatch = data.match(/path:\s*(.+)/);
+            const fileName = fileMatch ? fileMatch[1].trim() : null;
+            manualUpdateInfo = { version: latestVersion, fileName: fileName, mirrorURL: mirrorURL, yaml: data };
+            resolve({ hasUpdate: true, version: latestVersion, fileName: fileName });
+          } else {
+            resolve({ hasUpdate: false, version: latestVersion });
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    request.on('error', (err) => {
+      reject(err);
+    });
+
+    request.end();
+  });
+});
+
+// 简单版本比较函数
+function compareVersions(v1, v2) {
+  const parts1 = v1.replace(/^v/, '').split('.').map(Number);
+  const parts2 = v2.replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const n1 = parts1[i] || 0;
+    const n2 = parts2[i] || 0;
+    if (n1 > n2) return 1;
+    if (n1 < n2) return -1;
+  }
+  return 0;
+}
+
+ipcMain.on('manual-download-update', (event) => {
+  if (!manualUpdateInfo || !manualUpdateInfo.fileName) {
+    event.sender.send('update-error', { message: '没有可下载的更新信息', code: 'NO_UPDATE_INFO' });
+    return;
+  }
+
+  const fileName = manualUpdateInfo.fileName;
+  const downloadURL = manualUpdateInfo.mirrorURL + fileName;
+  const savePath = path.join(app.getPath('temp'), fileName);
+
+  console.log('[ManualUpdate] Downloading:', downloadURL, '->', savePath);
+
+  const file = fs.createWriteStream(savePath);
+  let downloadedBytes = 0;
+  let totalBytes = 0;
+
+  const request = net.request({
+    method: 'GET',
+    url: downloadURL,
+    session: session.defaultSession
+  });
+
+  request.on('response', (response) => {
+    if (response.statusCode !== 200) {
+      event.sender.send('update-error', { message: '下载失败，状态码: ' + response.statusCode, code: 'DOWNLOAD_FAILED' });
+      file.close();
+      fs.unlinkSync(savePath);
+      return;
+    }
+
+    totalBytes = parseInt(response.headers['content-length'] || '0', 10);
+    console.log('[ManualUpdate] Total bytes:', totalBytes);
+
+    response.on('data', (chunk) => {
+      file.write(chunk);
+      downloadedBytes += chunk.length;
+
+      if (totalBytes > 0) {
+        const percent = Math.floor((downloadedBytes / totalBytes) * 100);
+        event.sender.send('manual-update-progress', {
+          percent: percent,
+          transferred: downloadedBytes,
+          total: totalBytes
+        });
+      }
+    });
+
+    response.on('end', () => {
+      file.end(() => {
+        console.log('[ManualUpdate] Download complete:', savePath);
+        manualUpdateDownload = savePath;
+        event.sender.send('manual-update-downloaded', { version: manualUpdateInfo.version, filePath: savePath });
+      });
+    });
+  });
+
+  request.on('error', (err) => {
+    console.error('[ManualUpdate] Download error:', err);
+    event.sender.send('update-error', { message: '下载失败: ' + err.message, code: 'DOWNLOAD_ERROR' });
+    file.close();
+    try { fs.unlinkSync(savePath); } catch (e) {}
+  });
+
+  // 支持取消下载
+  manualUpdateCanceled = false;
+  ipcMain.once('cancel-manual-download', () => {
+    manualUpdateCanceled = true;
+    request.abort();
+    file.close();
+    try { fs.unlinkSync(savePath); } catch (e) {}
+  });
+
+  request.end();
+});
+
+let manualUpdateCanceled = false;
+
 // --- Auto Updater ---
 
 // 检测是否为开发模式（应用未打包）
@@ -879,14 +1066,34 @@ const isAppPacked = app.isPackaged;
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
 
-// 显式设置更新源地址（确保始终指向正确的 GitHub 仓库）
-const GITHUB_OWNER = 'qwerwhr';
-const GITHUB_REPO = 'AudioVisual';
-autoUpdater.setFeedURL({
-  provider: 'github',
-  owner: GITHUB_OWNER,
-  repo: GITHUB_REPO
-});
+// 根据当前镜像类型配置 autoUpdater
+function configureAutoUpdater() {
+  if (currentMirrorType === 'github') {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'qwerwhr',
+      repo: 'AudioVisual'
+    });
+    console.log('[AutoUpdater] Using GitHub official source');
+  } else if (currentMirrorType === 'generic') {
+    if (!currentMirrorURL) {
+      console.error('[AutoUpdater] Generic mirror URL not set, falling back to GitHub');
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: 'qwerwhr',
+        repo: 'AudioVisual'
+      });
+    } else {
+      autoUpdater.setFeedURL({
+        provider: 'generic',
+        url: currentMirrorURL
+      });
+      console.log('[AutoUpdater] Using generic mirror:', currentMirrorURL);
+    }
+  }
+}
+
+configureAutoUpdater();
 
 // 添加日志以便调试（如果 electron-log 可用）
 try {
@@ -955,14 +1162,18 @@ function initializeAutoUpdater() {
 
   autoUpdater.on('error', (err) => {
     console.error('[AutoUpdater] Error:', err);
+    const isNetworkError = err.code && ['ENOTFOUND', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'TIMEOUT'].includes(err.code);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      // 提供更友好的错误信息
       const errorMessage = err.message || err.toString();
       mainWindow.webContents.send('update-error', {
         message: errorMessage,
         code: err.code,
         stack: err.stack
       });
+      // 网络错误时通知渲染进程弹窗选择镜像
+      if (isNetworkError) {
+        mainWindow.webContents.send('update-timeout');
+      }
     }
   });
 
@@ -1007,6 +1218,8 @@ function checkUpdate() {
         message: '检查更新超时，请检查网络连接或稍后重试。',
         code: 'TIMEOUT'
       });
+      // 通知渲染进程弹出镜像选择对话框
+      mainWindow.webContents.send('update-timeout');
     }
   }, 30000);
   

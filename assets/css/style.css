@@ -1365,3 +1365,86 @@ textarea {
         transform: translateY(0);
     }
 }
+
+/* === 镜像选择对话框 === */
+.mirror-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.mirror-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 1.5px solid var(--border-color);
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.mirror-item:hover {
+    border-color: var(--accent-color);
+    background: var(--bg-hover);
+}
+
+.mirror-item.selected {
+    border-color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+    box-shadow: 0 0 0 1px var(--accent-color);
+}
+
+.mirror-item-radio {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.mirror-item.selected .mirror-item-radio {
+    border-color: var(--accent-color);
+    background: var(--accent-color);
+    box-shadow: inset 0 0 0 3px var(--bg-primary);
+}
+
+.mirror-item-info {
+    flex: 1;
+}
+
+.mirror-item-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.mirror-item-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+#mirror-custom-url {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+    transition: border-color 0.2s ease;
+}
+
+#mirror-custom-url:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 15%, transparent);
+}
