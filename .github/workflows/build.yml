@@ -20,9 +20,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Setup npm mirror
+      - name: Setup electron mirrors
         run: |
-          npm config set registry https://registry.npmmirror.com
           echo "electron_mirror=https://registry.npmmirror.com/-/binary/electron/" >> .npmrc
           echo "electron_builder_binaries_mirror=https://registry.npmmirror.com/-/binary/electron-builder-binaries/" >> .npmrc
           echo "electron_custom_dir=${{ github.ref_type == 'tag' && github.ref_name || '33.4.11' }}" >> .npmrc
@@ -54,9 +53,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Setup npm mirror
+      - name: Setup electron mirrors
         run: |
-          npm config set registry https://registry.npmmirror.com
           echo "electron_mirror=https://registry.npmmirror.com/-/binary/electron/" >> .npmrc
           echo "electron_builder_binaries_mirror=https://registry.npmmirror.com/-/binary/electron-builder-binaries/" >> .npmrc
 
@@ -90,11 +88,10 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xauth xvfb
+          sudo apt-get install -y libgtk-3-dev libnotify-dev libnss3 libxss1 libasound2t64 libxtst6 xauth xvfb
 
-      - name: Setup npm mirror
+      - name: Setup electron mirrors
         run: |
-          npm config set registry https://registry.npmmirror.com
           echo "electron_mirror=https://registry.npmmirror.com/-/binary/electron/" >> .npmrc
           echo "electron_builder_binaries_mirror=https://registry.npmmirror.com/-/binary/electron-builder-binaries/" >> .npmrc
 
@@ -131,5 +128,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
