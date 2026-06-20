@@ -23,9 +23,9 @@ jobs:
       - name: Setup npm mirror
         run: |
           npm config set registry https://registry.npmmirror.com
-          npm config set electron_mirror https://registry.npmmirror.com/-/binary/electron/
-          npm config set electron_builder_binaries_mirror https://registry.npmmirror.com/-/binary/electron-builder-binaries/
-          npm config set electron_custom_dir ${{ github.ref_type == 'tag' && github.ref_name || '33.4.11' }}
+          echo "electron_mirror=https://registry.npmmirror.com/-/binary/electron/" >> .npmrc
+          echo "electron_builder_binaries_mirror=https://registry.npmmirror.com/-/binary/electron-builder-binaries/" >> .npmrc
+          echo "electron_custom_dir=${{ github.ref_type == 'tag' && github.ref_name || '33.4.11' }}" >> .npmrc
 
       - name: Install dependencies
         run: npm install
@@ -57,8 +57,8 @@ jobs:
       - name: Setup npm mirror
         run: |
           npm config set registry https://registry.npmmirror.com
-          npm config set electron_mirror https://registry.npmmirror.com/-/binary/electron/
-          npm config set electron_builder_binaries_mirror https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          echo "electron_mirror=https://registry.npmmirror.com/-/binary/electron/" >> .npmrc
+          echo "electron_builder_binaries_mirror=https://registry.npmmirror.com/-/binary/electron-builder-binaries/" >> .npmrc
 
       - name: Install dependencies
         run: npm install
@@ -95,8 +95,8 @@ jobs:
       - name: Setup npm mirror
         run: |
           npm config set registry https://registry.npmmirror.com
-          npm config set electron_mirror https://registry.npmmirror.com/-/binary/electron/
-          npm config set electron_builder_binaries_mirror https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          echo "electron_mirror=https://registry.npmmirror.com/-/binary/electron/" >> .npmrc
+          echo "electron_builder_binaries_mirror=https://registry.npmmirror.com/-/binary/electron-builder-binaries/" >> .npmrc
 
       - name: Install dependencies
         run: npm install
