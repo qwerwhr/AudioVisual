@@ -27,7 +27,7 @@ jobs:
         run: npm install --registry https://registry.npmjs.org/
 
       - name: Build Windows installer
-        run: electron-builder --win --publish never
+        run: npx electron-builder --win --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -57,7 +57,7 @@ jobs:
         run: npm install --registry https://registry.npmjs.org/
 
       - name: Build macOS DMG
-        run: electron-builder --mac --publish never
+        run: npx electron-builder --mac --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -92,7 +92,7 @@ jobs:
         run: npm install --registry https://registry.npmjs.org/
 
       - name: Build Linux DEB
-        run: electron-builder --linux --publish never
+        run: npx electron-builder --linux --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
