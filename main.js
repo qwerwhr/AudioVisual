@@ -1221,7 +1221,7 @@ function checkUpdate() {
       // 通知渲染进程弹出镜像选择对话框
       mainWindow.webContents.send('update-timeout');
     }
-  }, 30000);
+  }, 10000);
   
   try {
     autoUpdater.checkForUpdates()

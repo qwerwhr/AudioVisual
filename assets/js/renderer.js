@@ -1086,6 +1086,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         showUpdateNotification(errorMsg, 'error', false);
+        // 任何更新错误都自动弹出镜像选择对话框，让用户选择镜像重试
+        setTimeout(() => showMirrorDialog(), 800);
     });
 
     // 处理开发模式提示
