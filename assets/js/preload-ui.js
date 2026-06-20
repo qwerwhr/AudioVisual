@@ -58,4 +58,7 @@ contextBridge.exposeInMainWorld('voidAPI', {
   // 用户配置文件持久化同步
   saveUserConfig: (config) => ipcRenderer.send('save-user-config', config),
   getUserConfig: () => ipcRenderer.invoke('get-user-config'),
+  // BrowserView 显隐控制（对话框弹出时使用）
+  hideBrowserView: () => ipcRenderer.send('hide-browser-view-for-dialog'),
+  showBrowserView: () => ipcRenderer.send('show-browser-view-after-dialog'),
 });

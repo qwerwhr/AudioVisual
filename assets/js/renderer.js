@@ -1086,8 +1086,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         showUpdateNotification(errorMsg, 'error', false);
-        // 任何更新错误都自动弹出镜像选择对话框，让用户选择镜像重试
-        setTimeout(() => showMirrorDialog(), 800);
+        // 仅网络/超时错误时弹出镜像选择对话框（让用户选择其他节点重试）
+        if (err && err.message && (
+            err.message.includes('ENOTFOUND') ||
+            err.message.includes('ETIMEDOUT') ||
+            err.message.includes('ECONNREFUSED') ||
+            err.message.includes('ECONNRESET') ||
+            err.message.includes('TIMEOUT') ||
+            err.message.includes('net::ERR_') ||
+            (err.code && ['ENOTFOUND','ETIMEDOUT','ECONNREFUSED','ECONNRESET','TIMEOUT'].includes(err.code))
+        )) {
+            setTimeout(() => showMirrorDialog(), 800);
+        }
     });
 
     // 处理开发模式提示
@@ -1182,11 +1192,15 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMirrorList();
         mirrorCustom.style.display = 'none';
         mirrorCustomUrl.value = '';
+        // 临时隐藏 BrowserView，让对话框可见
+        if (window.voidAPI.hideBrowserView) window.voidAPI.hideBrowserView();
         mirrorDialog.style.display = 'flex';
     }
 
     function hideMirrorDialog() {
         mirrorDialog.style.display = 'none';
+        // 恢复 BrowserView
+        if (window.voidAPI.showBrowserView) window.voidAPI.showBrowserView();
     }
 
     mirrorCancel.addEventListener('click', hideMirrorDialog);

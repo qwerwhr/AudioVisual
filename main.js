@@ -550,6 +550,20 @@ function createWindow() {
     }
   });
 
+  // 对话框弹出时临时隐藏 BrowserView，关闭后恢复
+  ipcMain.on('hide-browser-view-for-dialog', () => {
+    if (view && mainWindow) {
+      mainWindow.removeBrowserView(view);
+    }
+  });
+
+  ipcMain.on('show-browser-view-after-dialog', () => {
+    if (view && mainWindow) {
+      mainWindow.setBrowserView(view);
+      updateViewBounds(true);
+    }
+  });
+
   ipcMain.on('navigate', async (event, { url, isPlatformSwitch, themeVars }) => {
     console.log(`[Navigate] === NAVIGATION STARTED ===`);
     console.log(`[Navigate] URL: ${url}`);
@@ -1199,13 +1213,10 @@ function checkUpdate() {
   if (!isAppPacked) {
     console.log('[AutoUpdater] Running in development mode, update check is disabled.');
     if (mainWindow && !mainWindow.isDestroyed()) {
-      // 延迟一下让用户看到"检查中"状态
-      setTimeout(() => {
-        mainWindow.webContents.send('update-dev-mode', {
-          message: '开发模式下无法检查更新。\n请使用打包后的应用程序进行更新检查。',
-          version: app.getVersion()
-        });
-      }, 500);
+      mainWindow.webContents.send('update-dev-mode', {
+        message: '开发模式下无法检查更新。\n请打包后安装再使用此功能。',
+        version: app.getVersion()
+      });
     }
     return;
   }
