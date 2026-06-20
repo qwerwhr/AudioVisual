@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build Release
 
 on:
   push:
@@ -6,89 +6,128 @@ on:
       - 'v*'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        
-    - name: Clean npm cache
-      run: npm cache clean --force
-      
-    - name: Remove lock files
-      run: |
-        rm -f package-lock.json npm-shrinkwrap.json
-      shell: bash
-        
-    - name: Install dependencies
-      run: npm install
-      
-    - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ruby ruby-dev rubygems build-essential
-        sudo gem install --no-document fpm
-      
-    - name: Build for macOS
-      if: matrix.os == 'macos-latest'
-      run: npm run dist:mac -- --publish=never
-      
-    - name: Build for Linux
-      if: matrix.os == 'ubuntu-latest'
-      run: npm run dist:linux -- --publish=never
-      
-    - name: Upload macOS artifacts
-      if: matrix.os == 'macos-latest' && success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-build
-        path: dist/*.dmg
-        if-no-files-found: warn
-        
-    - name: Upload Linux artifacts
-      if: matrix.os == 'ubuntu-latest' && success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-build
-        path: dist/*.deb
-        if-no-files-found: warn
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup npm mirror
+        run: |
+          npm config set registry https://registry.npmmirror.com
+          npm config set electron_mirror https://registry.npmmirror.com/-/binary/electron/
+          npm config set electron_builder_binaries_mirror https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          npm config set electron_custom_dir ${{ github.ref_type == 'tag' && github.ref_name || '33.4.11' }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows installer
+        run: npm run dist:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: dist/*.{exe,msi,blockmap,yml}
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup npm mirror
+        run: |
+          npm config set registry https://registry.npmmirror.com
+          npm config set electron_mirror https://registry.npmmirror.com/-/binary/electron/
+          npm config set electron_builder_binaries_mirror https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build macOS DMG
+        run: npm run dist:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installers
+          path: dist/*.dmg
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xauth xvfb
+
+      - name: Setup npm mirror
+        run: |
+          npm config set registry https://registry.npmmirror.com
+          npm config set electron_mirror https://registry.npmmirror.com/-/binary/electron/
+          npm config set electron_builder_binaries_mirror https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Linux DEB
+        run: npm run dist:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers
+          path: dist/*.deb
 
   release:
-    needs: build
+    name: Create Release
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          macos-build/*
-          linux-build/*
-        generate_release_notes: true
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

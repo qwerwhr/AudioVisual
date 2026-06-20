@@ -1,6 +1,6 @@
 {
   "name": "audiovisual",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "The key to unlock all streams.",
   "main": "main.js",
   "scripts": {
@@ -13,7 +13,7 @@
   },
   "author": {
     "name": "AudioVisual",
-    "email": "fenghaoran60@gmail.com"
+    "email": "w2221462482@gmail.com"
   },
   "license": "UNLICENSED",
   "devDependencies": {
@@ -30,7 +30,7 @@
     "appId": "com.void.player",
     "publish": {
       "provider": "github",
-      "owner": "RemotePinee",
+      "owner": "RemotePineapple",
       "repo": "AudioVisual"
     },
     "productName": "AudioVisual",
@@ -40,39 +40,27 @@
       "assets/**/*"
     ],
     "win": {
-      "target": {
-        "target": "nsis",
-        "arch": [
-          "x64"
-        ]
-      },
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "msi", "arch": ["x64"] }
+      ],
       "icon": "assets/images/icon-512.png",
       "requestedExecutionLevel": "asInvoker",
       "verifyUpdateCodeSignature": false,
       "publisherName": "AudioVisual",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "sign": false
     },
     "mac": {
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
+        { "target": "dmg", "arch": ["x64", "arm64"] }
       ],
       "icon": "assets/images/icon-512.png",
       "category": "public.app-category.entertainment"
     },
     "linux": {
       "target": [
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        }
+        { "target": "deb", "arch": ["x64"] }
       ],
       "icon": "assets/images/icon-512.png",
       "category": "AudioVideo"
@@ -81,10 +69,12 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "differentialPackage": true
+      "differentialPackage": true,
+      "artifactName": "${productName}-${version}-setup.${ext}"
     },
-    "electronDownload": {
-      "mirror": "https://npmmirror.com/mirrors/electron/"
+    "msi": {
+      "oneClick": false,
+      "artifactName": "${productName}-${version}.${ext}"
     },
     "directories": {
       "output": "dist"

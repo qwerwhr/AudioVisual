@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 
 <head>
     <meta charset="UTF-8">
@@ -52,66 +52,86 @@
                         <label for="api-select">解析接口:</label>
                         <select id="api-select"></select>
                     </div>
+                    <div class="control-group" style="flex-direction: row; gap: 5px;">
+                        <select id="resolution-filter" class="compact-select" style="flex:1;" aria-label="分辨率筛选">
+                            <option value="all">全部分辨率</option>
+                            <option value="4K">4K 超高清</option>
+                            <option value="1080P">1080P 高清</option>
+                            <option value="720P">720P 标准</option>
+                        </select>
+                        <button id="search-api-button" class="compact-action-button" data-tooltip="搜索新接口" style="flex:0;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                        </button>
+                        <button id="check-api-button" class="compact-action-button" data-tooltip="检测接口可用性" style="flex:0;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                            </svg>
+                        </button>
+                    </div>
                     <button id="parse-button" class="action-button">
-                        <div class="button-icon">
+                        <span class="button-icon">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
                                 fill="currentColor">
                                 <path
                                     d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" />
                             </svg>
-                        </div>
-                        <div class="button-text">P A R S E !</div>
+                        </span>
+                        <span class="button-text">P A R S E !</span>
                     </button>
                 </div>
                 <div class="control-group no-drag" style="margin-top: 15px;">
                     <button id="drama-mode-button" class="action-button">
-                        <div class="button-icon"
+                        <span class="button-icon"
                             style="display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;">
                             🌍
-                        </div>
-                        <div class="button-text">美韩日剧</div>
+                        </span>
+                        <span class="button-text">美韩日剧</span>
                     </button>
                 </div>
                 <div class="drama-controls no-drag drama-only">
                     <div class="control-group">
                         <button id="netflix-factory-button" class="action-button">
-                            <div class="button-icon">
+                            <span class="button-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
                                     fill="currentColor">
                                     <path
                                         d="M5.398 0v.006c3.028 8.556 5.37 15.175 8.348 23.596 2.344.058 4.85.398 4.854.398-2.8-7.924-5.923-16.747-8.487-24zm8.489 0v9.63L18.6 22.951c-.043-7.86-.004-15.913.002-22.95zM5.398 1.05V24c2.873-.12 4.557-.396 4.557-.396 0-8.026-.002-16.064-.002-22.554z" />
                                 </svg>
-                            </div>
-                            <div class="button-text">奈飞工厂</div>
+                            </span>
+                            <span class="button-text">奈飞工厂</span>
                         </button>
                     </div>
                     <div class="control-group">
                         <button id="7-movie-button" class="action-button">
-                            <div class="button-icon">
+                            <span class="button-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
                                     fill="currentColor">
                                     <path
                                         d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2h-2z" />
                                 </svg>
-                            </div>
-                            <div class="button-text">七点电影</div>
+                            </span>
+                            <span class="button-text">七点电影</span>
                         </button>
                     </div>
                     <div class="control-group">
                         <button id="kanpian-button" class="action-button">
-                            <div class="button-icon">
+                            <span class="button-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
                                     <rect x="2" y="3" width="16" height="14" rx="2" fill="#000000" />
                                     <rect x="3" y="4" width="14" height="12" fill="#1a1a1a" />
                                     <polygon points="8,7 8,13 13,10" fill="#ffffff" />
                                 </svg>
-                            </div>
-                            <div class="button-text">看片狂人</div>
+                            </span>
+                            <span class="button-text">看片狂人</span>
                         </button>
                     </div>
                     <div class="control-group">
                         <button id="gazf-button" class="action-button">
-                            <div class="button-icon">
+                            <span class="button-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
                                     <rect x="1" y="3" width="18" height="14" rx="2" fill="#000000" stroke="#333"
                                         stroke-width="1" />
@@ -121,8 +141,8 @@
                                     <rect x="3" y="11" width="6" height="4" fill="#333" />
                                     <rect x="11" y="11" width="6" height="4" fill="#333" />
                                 </svg>
-                            </div>
-                            <div class="button-text">GAZF</div>
+                            </span>
+                            <span class="button-text">GAZF</span>
                         </button>
                     </div>
                 </div>
@@ -130,7 +150,7 @@
                     <h4>免责声明</h4>
                     <ul>
                         <li>软件为开源项目，如您是花钱购买请向购买平台投诉，一切损失与开发者无关，项目内所有资源均来源于互联网，本项目只做整合，如侵犯您的权益请联系邮箱删除！！</li>
-                        <li><strong>Email：</strong><a href="mailto:fenghaoran60@gmail.com">fenghaoran60@gmail.com</a>
+                        <li><strong>Email：</strong><a href="mailto:w2221462482@gmail.com">w2221462482@gmail.com</a>
                         </li>
                     </ul>
                 </div>
@@ -381,24 +401,15 @@
     <script>
         // Deep integration handshake: Ensure dark theme is visible before showing window
         window.addEventListener('load', () => {
-            const container = document.querySelector('.container');
-            // Wait for next frames to allow painting
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (container) container.classList.add('loaded');
-                    // Final safety delay before signaling main process
-                    setTimeout(() => {
-                        window.voidAPI.showWindow();
-                    }, 50);
-                });
-            });
+            // loaded 类已在 renderer.js 的 DOMContentLoaded 里添加，此处无需重复
+            // 仅保留日志用于调试
+            console.log('[Renderer] window.load event fired.');
         });
     </script>
-    <script src="./assets/js/toastify.min.js"></script>
-    <script src="./assets/js/renderer.js"></script>
-    <div id="loading-overlay" class="hidden">
-        <div class="spinner"></div>
-    </div>
+    <script src="./assets/js/toastify.min.js" onerror="console.error('[HTML] Failed to load toastify.min.js')"></script>
+    <script>console.log('[HTML] Inline script BEFORE renderer.js loaded');</script>
+    <script src="./assets/js/renderer.js" onerror="console.error('[HTML] Failed to load renderer.js')"></script>
+    <script>console.log('[HTML] Inline script AFTER renderer.js loaded');</script>
     <div id="custom-confirm-modal" class="modal-overlay" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">

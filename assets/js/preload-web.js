@@ -6,6 +6,26 @@ Object.defineProperty(navigator, 'webdriver', {
   get: () => false,
 });
 
+// --- 优酷反爬虫绕过增强 ---
+// 在优酷页面上额外注入反检测脚本
+if (window.location.hostname.includes('youku.com')) {
+  // 覆写 AutomationRelated 属性
+  try {
+    Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+    Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    // 隐藏 Chrome 自动化标志
+    window.chrome = { runtime: {}, csi: () => {}, loadTimes: () => {} };
+    // 覆写 Permissions API 防止通知权限检测
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) => (
+      parameters.name === 'notifications' ?
+        Promise.resolve({ state: Notification.permission }) :
+        originalQuery(parameters)
+    );
+  } catch (e) { console.log('[AntiBot-Youku] Injection error:', e); }
+}
+
 // --- 样式注入模块 ---
 
 const STYLE_ID = 'void-dynamic-styles';
@@ -81,7 +101,8 @@ function applyStyles(cssContent) {
     [class*="shapedPopup_container"], [class*="notSupportedDrm_drmTipsPopBox"],
     [class*="floatPage_floatPage"], #tvgCashierPage, [class*="popwin_fullCover"],
     /* 其他 */
-    .bilibili-player-video-wrap, .bilibili-player-video-control, .bilibili-player-electric-panel
+    /* 注意：已移除 bilibili 弹幕相关元素屏蔽，保留弹幕功能 */
+    /* .bilibili-player-video-wrap, .bilibili-player-video-control, .bilibili-player-electric-panel 原在此处屏蔽，现已移除 */
     /* 注意：已移除芒果 TV 容器隐藏，防止 0 宽度无法注入 */
     /* .mgtv-player-wrap, .mgtv-player-control-bar, .mgtv-player-data-panel, .mgtv-player-layers, .mgtv-player-ad, .mgtv-player-overlay, #m-player-ad */
     {
@@ -123,6 +144,22 @@ document.addEventListener('click', (event) => {
       ipcRenderer.send('proactive-parse-request', anchor.href);
     }
   }
+  // 优酷换集检测
+  if (window.location.hostname.includes('youku.com')) {
+    const anchor = event.target.closest('a');
+    if (anchor && anchor.href && anchor.href.includes('youku.com/v_show/')) {
+      console.log('[preload-web] Detected Youku episode click:', anchor.href);
+      ipcRenderer.send('proactive-parse-request', anchor.href);
+    }
+  }
+  // 哔哩哔哩换集检测
+  if (window.location.hostname.includes('bilibili.com')) {
+    const anchor = event.target.closest('a');
+    if (anchor && anchor.href && (anchor.href.includes('bilibili.com/video/') || anchor.href.includes('bilibili.com/bangumi/play/'))) {
+      console.log('[preload-web] Detected Bilibili episode click:', anchor.href);
+      ipcRenderer.send('proactive-parse-request', anchor.href);
+    }
+  }
 }, true); // 使用捕获阶段以最快速度拦截事件
 
 
@@ -146,6 +183,46 @@ observer.observe(document, { childList: true, subtree: true });
 applyStyles(''); // 传入空字符串以确保<base>标签被处理
 
 // --- 注入引擎 (Thread-Local Guardian) ---
+
+/**
+ * 停止注入守护进程：清理 iframe、停止定时器、暂停所有视频
+ * 在切换平台或返回首页时调用，防止后台继续播放
+ */
+function stopInjectionGuardian() {
+  // 1. 清除 Guardian 定时器
+  if (currentGuardianInterval) {
+    clearInterval(currentGuardianInterval);
+    currentGuardianInterval = null;
+    console.log('[Guardian] Stopped guardian interval.');
+  }
+
+  // 2. 移除注入的 iframe 播放器
+  const iframe = document.getElementById('void-player-iframe');
+  if (iframe) {
+    iframe.remove();
+    console.log('[Guardian] Removed injected iframe.');
+  }
+
+  // 3. 暂停并恢复页面中所有原生 video 元素
+  document.querySelectorAll('video').forEach(el => {
+    try {
+      el.muted = false; // 恢复音量（不再静音）
+      if (!el.paused) el.pause(); // 暂停播放
+      el.style.opacity = ''; // 恢复可见
+      el.style.pointerEvents = ''; // 恢复交互
+    } catch (e) { }
+  });
+
+  // 4. 恢复被隐藏的干扰元素（可选，让页面恢复正常状态）
+  const hiddenSelectors = [
+    '#playerPopup', '#vipCoversBox',
+    '.iqp-player-vipmask', '.iqp-player-paymask', '.iqp-player-loginmask'
+  ];
+  document.querySelectorAll(hiddenSelectors.join(',')).forEach(el => {
+    el.style.display = '';
+    el.style.zIndex = '';
+  });
+}
 
 let currentGuardianInterval = null;
 let guardianStartTime = 0;
@@ -181,7 +258,7 @@ function startInjectionGuardian(url) {
       } catch (e) { }
     });
 
-    // 2. 清理干扰元素 (仅限非容器元素)
+    // 2. 清理干扰元素 (仅限非容器元素) - 排除弹幕相关元素
     const nuisanceSelectors = [
       '#playerPopup', '#vipCoversBox', 'div.iqp-player-vipmask',
       'div.iqp-player-paymask', 'div.iqp-player-loginmask',
@@ -199,6 +276,7 @@ function startInjectionGuardian(url) {
       '.m-pc-down', '.m-pc-client', '.qy-dialog-container', '.iqp-client-guide', '.qy-dialog-wrap',
       '[class*="shapedPopup_container"]', '[class*="notSupportedDrm_drmTipsPopBox"]',
       '[class*="floatPage_floatPage"]', '#tvgCashierPage', '[class*="popwin_fullCover"]'
+      // 注意：弹幕相关元素不在屏蔽列表中，保留弹幕功能
     ];
     document.querySelectorAll(nuisanceSelectors.join(',')).forEach(el => {
       el.style.display = 'none';
@@ -214,7 +292,8 @@ function startInjectionGuardian(url) {
       const searchList = [
         '#m-player-video-container', '.mgtv-video-container', '.mgtv-player-container', '.mgtv-player-wrap', '#mgtv-player', '.mgtv-player', '.mango-layer', '.mgtv-player-ad', // Mango TV Priority
         '.mgtv-player-layers-container', '.mgtv-player-video-area', '.mgtv-player-video-box', '.mgtv-player-video-content', // Expanded Mango TV selectors
-        '.iqp-player', '#flashbox', '.txp_player_video_wrap', '#bilibili-player', '.player-wrap', '#player-container', '#player', '.player-container', '.player-view', '.video-wrapper', 'video'
+        '.iqp-player', '#flashbox', '.txp_player_video_wrap', '#bilibili-player', '.player-wrap', '#player-container', '#player', '.player-container', '.player-view', '.video-wrapper', 'video',
+        '#youku-player', '.youku-player', '.yk-player', '#ykPlayer', '.youku-fplayer', // 优酷播放器容器
       ];
       for (let s of searchList) {
         const el = document.querySelector(s);
@@ -252,7 +331,7 @@ function startInjectionGuardian(url) {
           width: rect.width + 'px',
           height: rect.height + 'px',
           border: 'none',
-          zIndex: '2147483647',
+          zIndex: '2147483646', // 留出最高层给弹幕层（2147483647）
           background: '#000'
         });
 
@@ -265,6 +344,12 @@ function startInjectionGuardian(url) {
     }
   }, 50); // 50ms 超高频探测
 }
+
+// 核心：处理来自主进程的停止注入指令（切换平台时清理后台播放）
+ipcRenderer.on('stop-injection', () => {
+  console.log('[preload-web] >>> RECEIVED stop-injection signal, cleaning up...');
+  stopInjectionGuardian();
+});
 
 // 核心：处理来自主进程的解析指令
 ipcRenderer.on('apply-embed-video', (event, url) => {
@@ -280,10 +365,10 @@ ipcRenderer.on('apply-embed-video', (event, url) => {
   startInjectionGuardian(url);
 });
 
-// 核心：页面加载的第一时间主动请求解析，解决“第一次注入慢”
+// 核心：页面加载的第一时间主动请求解析，解决"第一次注入慢"
 (() => {
   const url = window.location.href;
-  const isVideoPage = url.includes('iqiyi.com/v_') || url.includes('mgtv.com/b/') || url.includes('v.qq.com/x/cover/');
+  const isVideoPage = url.includes('iqiyi.com/v_') || url.includes('mgtv.com/b/') || url.includes('v.qq.com/x/cover/') || url.includes('youku.com/v_show/') || url.includes('bilibili.com/video/') || url.includes('bilibili.com/bangumi/play/');
   if (isVideoPage) {
     ipcRenderer.send('proactive-parse-request', url);
   }

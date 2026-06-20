@@ -1,6 +1,6 @@
 // main.js
 
-const { app, screen, BrowserWindow, BrowserView, ipcMain, session, shell, dialog } = require('electron');
+const { app, screen, BrowserWindow, BrowserView, ipcMain, session, shell, dialog, net } = require('electron');
 
 const path = require('path');
 const fs = require('fs');
@@ -31,21 +31,16 @@ const isDev = false; // Forced to false to disable auto DevTools
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 app.commandLine.appendSwitch('no-proxy-server');
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion'); // Fixes some white flashes on Windows
+app.commandLine.appendSwitch('ignore-certificate-errors'); // 全局忽略证书错误，影视站点多数使用自签名证书
 
-// Development-only switches
-if (isDev) {
-  console.log('Running in development mode. Applying insecure workarounds.');
-  app.commandLine.appendSwitch('ignore-certificate-errors');
-}
-
-// 4. Certificate Error Handler
-if (isDev) {
-  app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-    console.log(`[DEV ONLY] Certificate error for ${url}: ${error}`);
-    event.preventDefault();
-    callback(true);
-  });
-}
+// 4. Certificate Error Handler (全局忽略所有证书错误)
+// 作为本地视频播放器，SSL 证书严格验证不必要，且多数影视站点使用自签名或过期证书
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  const hostname = new URL(url).hostname;
+  console.log(`[Cert] Ignoring certificate error for ${hostname}: ${error}`);
+  event.preventDefault();
+  callback(true);
+});
 
 // --- Application Setup ---
 app.setPath('userData', path.join(__dirname, 'userData'));
@@ -88,22 +83,86 @@ let isSidebarCollapsed = false;
 let currentThemeCss = `:root { --av-primary-bg: #1e1e2f; --av-accent-color: #3a3d5b; --av-highlight-color: #ff6768; }`;
 const scrollbarCss = fs.readFileSync(path.join(__dirname, 'assets', 'css', 'view-style.css'), 'utf8');
 
+// --- 用户配置持久化（JSON文件） ---
+const USER_CONFIG_PATH = path.join(app.getPath('userData'), '..', 'userData', 'user-config.json');
+
+// 默认配置
+const DEFAULT_USER_CONFIG = {
+  dramaSites: [
+    { value: 'https://monkey-flix.com/', label: '猴影工坊' },
+    { value: 'https://www.letu.me/', label: '茉小影' },
+    { value: 'https://103.194.185.51:51122/', label: '网飞猫' },
+    { value: 'https://www.keke6.app/', label: '可可影视' }
+  ],
+  apiList: []
+};
+
+// 加载用户配置文件
+function loadUserConfig() {
+  try {
+    if (fs.existsSync(USER_CONFIG_PATH)) {
+      const raw = fs.readFileSync(USER_CONFIG_PATH, 'utf8');
+      const config = JSON.parse(raw);
+      console.log('[Config] Loaded user config from', USER_CONFIG_PATH);
+      return { ...DEFAULT_USER_CONFIG, ...config };
+    }
+  } catch (e) {
+    console.error('[Config] Failed to load user config:', e);
+  }
+  // 返回默认配置并保存
+  saveUserConfig(DEFAULT_USER_CONFIG);
+  return DEFAULT_USER_CONFIG;
+}
+
+// 保存用户配置文件
+function saveUserConfig(config) {
+  try {
+    fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+    console.log('[Config] Saved user config to', USER_CONFIG_PATH);
+    return true;
+  } catch (e) {
+    console.error('[Config] Failed to save user config:', e);
+    return false;
+  }
+}
+
 // --- Pre-rendering Logic ---
 const viewPool = new Map(); // Stores fully rendered BrowserViews persistently
-const dramaSites = [
-  'https://monkey-flix.com/',
-  'https://www.movie1080.xyz/',
-  'https://www.letu.me/',
-  'https://www.ncat21.com/'
-];
+const siteUrlMappings = {}; // 存储失效域名到新域名的映射
+const userConfig = loadUserConfig();
+const dramaSites = (userConfig.dramaSites || []).map(site => site.value || site);
 
 async function preloadSites() {
   console.log('Starting pre-rendering of drama sites...');
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
   for (const url of dramaSites) {
+    // 先检测站点是否可用，不可用则尝试自动替换
+    let effectiveUrl = url;
     try {
-      console.log(`Pre-rendering ${url}`);
+      const isAvailable = await checkSiteAvailability(url);
+      if (!isAvailable) {
+        console.warn(`[Preload] Site unavailable: ${url}, searching for alternative...`);
+        const newUrl = await searchAndUpdateSiteUrl(url);
+        if (newUrl) {
+          console.log(`[Preload] Using alternative: ${newUrl}`);
+          effectiveUrl = newUrl;
+          // 更新 dramaSites 数组中的对应项
+          const idx = dramaSites.indexOf(url);
+          if (idx !== -1) dramaSites[idx] = newUrl;
+          // 保存到映射表，供渲染进程使用
+          siteUrlMappings[url] = newUrl;
+        } else {
+          console.warn(`[Preload] No alternative found for ${url}, skipping pre-render.`);
+          continue;
+        }
+      }
+    } catch (e) {
+      console.warn(`[Preload] Availability check failed for ${url}, attempting load anyway...`);
+    }
+
+    try {
+      console.log(`Pre-rendering ${effectiveUrl}`);
       const ghostView = new BrowserView({
         webPreferences: {
           contextIsolation: true,
@@ -123,7 +182,7 @@ async function preloadSites() {
         const handleFail = (event, errorCode, errorDescription) => {
           cleanup();
           if (errorCode !== -3) { // -3 is ABORTED
-            reject(new Error(`ERR_FAILED (${errorCode}) loading '${url}': ${errorDescription}`));
+            reject(new Error(`ERR_FAILED (${errorCode}) loading '${effectiveUrl}': ${errorDescription}`));
           } else {
             resolve();
           }
@@ -135,14 +194,15 @@ async function preloadSites() {
 
         ghostView.webContents.on('did-finish-load', handleFinish);
         ghostView.webContents.on('did-fail-load', handleFail);
-        ghostView.webContents.loadURL(url);
+        ghostView.webContents.loadURL(effectiveUrl);
       });
 
       await loadPromise;
-      viewPool.set(url, ghostView); // Store the fully rendered view
-      console.log(`Finished pre-rendering ${url}`);
+      viewPool.set(effectiveUrl, ghostView);
+      if (effectiveUrl !== url) viewPool.set(url, ghostView); // 同时用原 URL 索引，方便查找
+      console.log(`Finished pre-rendering ${effectiveUrl}`);
     } catch (error) {
-      console.error(`Failed to pre-render ${url}:`, error);
+      console.error(`Failed to pre-render ${effectiveUrl}:`, error);
     }
     await delay(500);
   }
@@ -197,7 +257,7 @@ function attachViewEvents(targetView) {
   targetView.webContents.on('did-start-navigation', (event, url, isInPlace, isMainFrame) => {
     if (isMainFrame && mainWindow && !mainWindow.isDestroyed() && view === targetView) {
       mainWindow.webContents.send('url-updated', url);
-      // 核心：页面加载的第一时间主动请求解析，解决“第一次注入慢”
+      // 核心：页面加载的第一时间主动请求解析，解决"第一次注入慢"
       targetView.webContents.executeJavaScript(`
         (() => {
           const url = window.location.href;
@@ -207,18 +267,43 @@ function attachViewEvents(targetView) {
           }
         })();
       `);
+
+      // 优酷反爬虫绕过：在导航阶段注入额外反检测脚本
+      if (url.includes('youku.com')) {
+        targetView.webContents.executeJavaScript(`
+          (() => {
+            // 覆写 Chrome 自动化标志
+            if (!window.chrome) window.chrome = {};
+            window.chrome.runtime = {};
+            window.chrome.csi = function() {};
+            window.chrome.loadTimes = function() {};
+            // 覆写 Permissions API
+            if (navigator.permissions && navigator.permissions.query) {
+              const originalQuery = navigator.permissions.query.bind(navigator.permissions);
+              navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                  Promise.resolve({ state: Notification.permission }) :
+                  originalQuery(parameters)
+              );
+            }
+            console.log('[Youku-AntiBot] Extra anti-detection injected in navigation phase.');
+          })();
+        `).catch(console.error);
+      }
     }
   });
 
   targetView.webContents.on('did-navigate', (event, url) => {
     if (view !== targetView) return;
     console.log('Page navigated to:', url);
-    if ((url.includes('iqiyi.com/v_') || url.includes('mgtv.com/b/') || url.includes('v.qq.com/x/cover/')) && mainWindow) {
+    // 所有视频页面自动触发解析
+    const isVideoPage = url.includes('iqiyi.com/v_') || url.includes('mgtv.com/b/') || url.includes('v.qq.com/x/cover/') || url.includes('youku.com/v_show/') || url.includes('bilibili.com/video/') || url.includes('bilibili.com/bangumi/play/');
+    if (isVideoPage && mainWindow) {
       console.log('[Main] Auto-triggering fast-parse for navigation to video page:', url);
       mainWindow.webContents.send('fast-parse-url', url);
     }
     // 附加保障：did-navigate 时也补一次脉冲
-    if ((url.includes('iqiyi.com/v_') || url.includes('mgtv.com/b/') || url.includes('v.qq.com/x/cover/')) && mainWindow) {
+    if (isVideoPage && mainWindow) {
       mainWindow.webContents.send('fast-parse-url', url);
     }
     if (url.includes('iqiyi.com/v_') && url.includes('.html')) {
@@ -401,7 +486,10 @@ function createWindow() {
   mainWindow.on('move', saveStateDebounced);
   mainWindow.on('close', saveWindowState);
 
-  ipcMain.once('show-window', () => {
+  // 用 ready-to-show 替代 show-window IPC 方案，更可靠
+  mainWindow.once('ready-to-show', () => {
+    console.log('[Main] === ready-to-show fired, showing window ===');
+    console.log(`[Main] view exists at ready-to-show: ${!!view}`);
     mainWindow.show();
     mainWindow.webContents.send('init-sidebar-state', isSidebarCollapsed);
 
@@ -452,10 +540,27 @@ function createWindow() {
   });
 
   ipcMain.on('navigate', async (event, { url, isPlatformSwitch, themeVars }) => {
+    console.log(`[Navigate] === NAVIGATION STARTED ===`);
+    console.log(`[Navigate] URL: ${url}`);
+    console.log(`[Navigate] mainWindow exists: !!mainWindow`);
+    console.log(`[Navigate] view exists before: ${!!view}`);
+    console.log(`[Navigate] viewPool size: ${viewPool.size}`);
+    
     if (themeVars) {
       currentThemeCss = `:root { ${Object.entries(themeVars).map(([key, value]) => `${key}: ${value}`).join('; ')} }`;
     }
     console.log(`[Navigate] Received request for ${url}.`);
+
+    // 关键修复：切换平台前，先通知旧 view 停止注入和播放
+    if (view && view.webContents && !view.webContents.isDestroyed()) {
+      console.log('[Navigate] Sending stop-injection to old view before switching.');
+      try {
+        view.webContents.send('stop-injection');
+      } catch (e) {
+        console.warn('[Navigate] Failed to send stop-injection to old view:', e.message);
+      }
+    }
+
     if (view) {
       mainWindow.removeBrowserView(view);
       // Detach and persist in pool instead of destroying
@@ -474,7 +579,9 @@ function createWindow() {
     }
 
     mainWindow.setBrowserView(view);
+    console.log(`[Navigate] BrowserView attached to mainWindow, view bounds will be updated`);
     updateViewBounds(true); // Must be true, setting it to 0x0 destroys frame buffer and causes layout flash
+    console.log(`[Navigate] View bounds updated`);
 
     /* // User reported slow platform switching, removing cookie clearing for now
     if (isPlatformSwitch) {
@@ -484,9 +591,10 @@ function createWindow() {
 
     if (!isFromCache) {
       view.webContents.loadURL(url);
-      console.log(`[Navigate] Loading URL: ${url}`);
-      // 核心提速：立即通知解析引擎开始工作，不等 BrowserView 的各种事件。解决“第一次加载慢”
-      if ((url.includes('iqiyi.com/v_') || url.includes('mgtv.com/b/') || url.includes('v.qq.com/x/cover/')) && mainWindow) {
+      console.log(`[Navigate] === Loading URL: ${url} ===`);
+      // 核心提速：立即通知解析引擎开始工作，不等 BrowserView 的各种事件。解决"第一次加载慢"
+      const isVideoUrl = url.includes('iqiyi.com/v_') || url.includes('mgtv.com/b/') || url.includes('v.qq.com/x/cover/') || url.includes('youku.com/v_show/') || url.includes('bilibili.com/video/') || url.includes('bilibili.com/bangumi/play/');
+      if (isVideoUrl && mainWindow) {
         console.log('[Navigate] Extreme Speed: Early pulse for initial load:', url);
         mainWindow.webContents.send('fast-parse-url', url);
       }
@@ -565,6 +673,119 @@ function createWindow() {
     }
   });
 }
+
+// --- 网址自动更新机制 ---
+// 影视站点的已知域名列表，当主域名失效时自动尝试备选域名
+const SITE_DOMAIN_MAP = {
+  'keke6.app': ['keke6.app', 'keke6.cc', 'keke6.com', 'keke5.app', 'keke7.app'],
+  '103.194.185.51': ['103.194.185.51'],
+  'monkey-flix.com': ['monkey-flix.com', 'monkeyflix.com', 'www.monkey-flix.com'],
+  'letu.me': ['letu.me', 'letu.cc', 'www.letu.me']
+};
+
+// 检测站点是否可用（发起轻量级 HTTP 请求）
+async function checkSiteAvailability(url) {
+  try {
+    const urlObj = new URL(url);
+    const options = {
+      hostname: urlObj.hostname,
+      port: 443,
+      path: urlObj.pathname + urlObj.search,
+      method: 'HEAD',
+      timeout: 8000,
+      rejectUnauthorized: false // 忽略 SSL 证书错误
+    };
+    const https = require('https');
+    return new Promise((resolve) => {
+      const req = https.request(options, (res) => {
+        resolve(res.statusCode >= 200 && res.statusCode < 400);
+      });
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+      req.end();
+    });
+  } catch (e) {
+    return false;
+  }
+}
+
+// 自动搜索并替换失效网址
+async function searchAndUpdateSiteUrl(originalUrl) {
+  try {
+    const urlObj = new URL(originalUrl);
+    const hostname = urlObj.hostname.replace('www.', '');
+    const candidates = SITE_DOMAIN_MAP[hostname];
+    if (!candidates) return null; // 没有备选域名
+
+    for (const domain of candidates) {
+      // 尝试多种 URL 格式
+      const urlsToTry = [
+        `https://${domain}/`,
+        `https://www.${domain}/`
+      ];
+      for (const testUrl of urlsToTry) {
+        if (testUrl === originalUrl) continue; // 跳过当前已失效的域名
+        const isAvailable = await checkSiteAvailability(testUrl);
+        if (isAvailable) {
+          console.log(`[SiteUpdater] Found working alternative: ${testUrl} (original: ${originalUrl})`);
+          return testUrl;
+        }
+      }
+    }
+    console.log(`[SiteUpdater] No working alternative found for: ${originalUrl}`);
+    return null;
+  } catch (e) {
+    console.error('[SiteUpdater] Error searching for alternative URL:', e);
+    return null;
+  }
+}
+
+// IPC 通道：渲染进程请求检测并更新站点
+ipcMain.on('check-and-update-site', async (event, originalUrl) => {
+  const newUrl = await searchAndUpdateSiteUrl(originalUrl);
+  if (newUrl && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('site-url-updated', { originalUrl, newUrl });
+  }
+});
+
+// IPC 通道：批量检测所有影视导航站点
+ipcMain.on('check-all-sites', async (event, sites) => {
+  const results = [];
+  for (const site of sites) {
+    const isAvailable = await checkSiteAvailability(site.value);
+    if (!isAvailable) {
+      const newUrl = await searchAndUpdateSiteUrl(site.value);
+      results.push({ original: site.value, available: false, newUrl });
+    } else {
+      results.push({ original: site.value, available: true, newUrl: null });
+    }
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('sites-check-results', results);
+  }
+});
+
+// IPC 通道：渲染进程请求获取失效域名映射
+ipcMain.handle('get-site-url-mappings', async (event) => {
+  return siteUrlMappings;
+});
+
+// --- 用户配置文件同步（主进程 ↔ 渲染进程） ---
+// 渲染进程保存完整用户配置到JSON文件
+ipcMain.on('save-user-config', (event, config) => {
+  saveUserConfig(config);
+  // 同步更新主进程内存中的 dramaSites
+  if (config.dramaSites) {
+    dramaSites.length = 0;
+    const newSites = (config.dramaSites || []).map(site => site.value || site);
+    dramaSites.push(...newSites);
+  }
+});
+
+// 渲染进程请求获取当前用户配置
+ipcMain.handle('get-user-config', async (event) => {
+  return loadUserConfig();
+});
 
 app.whenReady().then(async () => {
   await session.defaultSession.clearStorageData();

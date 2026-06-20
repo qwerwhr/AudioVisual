@@ -1,4 +1,67 @@
 // renderer.js
+// 确保所有函数在任何调用之前定义（防止 Electron 缓存或解析异常导致 undefined）
+function populateSelect(selectElement, items) {
+    items.forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.textContent = item.label;
+        selectElement.appendChild(option);
+    });
+}
+
+function navigateTo(url, isPlatformSwitch = false, themeVars = null) {
+    console.log('[Renderer] navigateTo called with:', { url, isPlatformSwitch, themeVars });
+
+    if (!url) {
+        console.error('[Renderer] navigateTo called with empty URL!');
+        showToast('导航错误：URL 为空', 'error');
+        return;
+    }
+
+    if (!window.voidAPI) {
+        console.error('[Renderer] window.voidAPI is not defined! Preload script may have failed.');
+        showToast('系统错误：通信接口未加载', 'error');
+        return;
+    }
+
+    if (typeof window.voidAPI.navigate !== 'function') {
+        console.error('[Renderer] window.voidAPI.navigate is not a function!', typeof window.voidAPI.navigate);
+        showToast('系统错误：导航方法不可用', 'error');
+        return;
+    }
+
+    try {
+        loadingOverlay.classList.remove('hidden');
+        urlInput.value = url;
+        currentVideoUrl = url;
+        isCurrentlyParsing = false;
+
+        console.log('[Renderer] Sending navigate IPC to main process:', url);
+        window.voidAPI.navigate(url, isPlatformSwitch, themeVars);
+        console.log('[Renderer] navigate IPC sent successfully');
+
+        if (container.classList.contains('drama-mode')) {
+            const dramaSite = dramaSites.find(site => url.startsWith(site.value));
+            if (dramaSite) {
+                quickDramaSelect.value = dramaSite.value;
+            }
+        }
+    } catch (err) {
+        console.error('[Renderer] navigateTo error:', err);
+        showToast('导航失败: ' + (err.message || '未知错误'), 'error');
+    }
+}
+
+console.log('[Renderer] Script loaded, starting execution...');
+
+// 全局错误捕获——帮助诊断按钮无响应问题
+window.addEventListener('error', (event) => {
+    console.error('[Renderer] UNCAUGHT ERROR:', event.error?.message || event.message, 'at', event.filename, 'line', event.lineno);
+    if (window.voidAPI?.showToast) {
+        window.voidAPI.showToast(`脚本错误: ${event.error?.message || event.message}`, 'error');
+    }
+});
+
 const urlInput = document.getElementById('url-input');
 const goButton = document.getElementById('go-button');
 const parseButton = document.getElementById('parse-button');
@@ -38,6 +101,9 @@ const tabButtons = document.querySelectorAll('.tab-button');
 const tabContents = document.querySelectorAll('.tab-content');
 const parsingListInput = document.getElementById('parsing-list-input');
 const dramaListInput = document.getElementById('drama-list-input');
+const resolutionFilter = document.getElementById('resolution-filter');
+const searchApiButton = document.getElementById('search-api-button');
+const checkApiButton = document.getElementById('check-api-button');
 
 let currentVideoUrl = '';
 let isCurrentlyParsing = false;
@@ -103,37 +169,79 @@ const platforms = [
 ];
 
 const DEFAULT_API_LIST = [
-    { value: "https://jx.xmflv.com/?url=", label: "虾米视频解析" },
-    { value: "https://jx.77flv.cc/?url=", label: "七七云解析" },
-    { value: "https://jx.playerjy.com/?url=", label: "Player-JY" },
-    { value: "https://jiexi.789jiexi.icu:4433/?url=", label: "789解析" },
-    { value: "https://jx.2s0.cn/player/?url=", label: "极速解析" },
-    { value: "https://bd.jx.cn/?url=", label: "冰豆解析" },
-    { value: "https://jx.973973.xyz/?url=", label: "973解析" },
-    { value: "https://www.ckplayer.vip/jiexi/?url=", label: "CK" },
-    { value: "https://jx.nnxv.cn/tv.php?url=", label: "七哥解析" },
-    { value: "https://www.yemu.xyz/?url=", label: "夜幕" },
-    { value: "https://www.pangujiexi.com/jiexi/?url=", label: "盘古" },
-    { value: "https://www.playm3u8.cn/jiexi.php?url=", label: "playm3u8" },
-    { value: "https://video.isyour.love/player/getplayer?url=", label: "芒果TV1" },
-    { value: "https://im1907.top/?jx=", label: "芒果TV2" },
-    { value: "https://jx.hls.one/?url=", label: "HLS解析" },
+    { value: "https://jx.xmflv.com/?url=", label: "虾米视频解析", resolution: "1080P", status: "active" },
+    { value: "https://jx.77flv.cc/?url=", label: "七七云解析", resolution: "1080P", status: "active" },
+    { value: "https://jx.playerjy.com/?url=", label: "Player-JY", resolution: "720P", status: "active" },
+    { value: "https://jiexi.789jiexi.icu:4433/?url=", label: "789解析", resolution: "720P", status: "active" },
+    { value: "https://jx.2s0.cn/player/?url=", label: "极速解析", resolution: "1080P", status: "active" },
+    { value: "https://bd.jx.cn/?url=", label: "冰豆解析", resolution: "720P", status: "active" },
+    { value: "https://jx.973973.xyz/?url=", label: "973解析", resolution: "1080P", status: "active" },
+    { value: "https://www.ckplayer.vip/jiexi/?url=", label: "CK", resolution: "4K", status: "active" },
+    { value: "https://jx.nnxv.cn/tv.php?url=", label: "七哥解析", resolution: "1080P", status: "active" },
+    { value: "https://www.yemu.xyz/?url=", label: "夜幕", resolution: "720P", status: "active" },
+    { value: "https://www.pangujiexi.com/jiexi/?url=", label: "盘古", resolution: "1080P", status: "active" },
+    { value: "https://www.playm3u8.cn/jiexi.php?url=", label: "playm3u8", resolution: "720P", status: "active" },
+    { value: "https://video.isyour.love/player/getplayer?url=", label: "芒果TV1", resolution: "1080P", status: "active" },
+    { value: "https://im1907.top/?jx=", label: "芒果TV2", resolution: "720P", status: "active" },
+    { value: "https://jx.hls.one/?url=", label: "HLS解析", resolution: "4K", status: "active" },
+];
+
+// 分辨率分组定义
+const RESOLUTION_GROUPS = [
+    { key: '4K', label: '4K 超高清', color: '#ff6768' },
+    { key: '1080P', label: '1080P 高清', color: '#4caf50' },
+    { key: '720P', label: '720P 标准', color: '#3a3d5b' },
+    { key: 'unknown', label: '未分类', color: '#888' }
 ];
 
 const DEFAULT_DRAMA_SITES = [
-    { value: 'https://www.movie1080.xyz/', label: '影巢movie' },
     { value: 'https://monkey-flix.com/', label: '猴影工坊' },
     { value: 'https://www.letu.me/', label: '茉小影' },
-    { value: 'https://www.ncat21.com/', label: '网飞猫' }
+    { value: 'https://103.194.185.51:51122/', label: '网飞猫' },
+    { value: 'https://www.keke6.app/', label: '可可影视' }
 ];
 
 let apiList = [...DEFAULT_API_LIST];
 let dramaSites = [...DEFAULT_DRAMA_SITES];
 
+// --- 去重工具函数 ---
+function deduplicateList(list, key = 'value') {
+    const seen = new Set();
+    return list.filter(item => {
+        if (seen.has(item[key])) return false;
+        seen.add(item[key]);
+        return true;
+    });
+}
+
 // --- Settings Persistence ---
 const SettingsManager = {
-    load() {
+    async load() {
         try {
+            // 优先从JSON配置文件读取（主进程持久化数据源）
+            if (window.voidAPI && window.voidAPI.getUserConfig) {
+                try {
+                    const config = await window.voidAPI.getUserConfig();
+                    if (config) {
+                        if (config.apiList && config.apiList.length > 0) {
+                            apiList = config.apiList;
+                            console.log('[Settings] Loaded apiList from JSON config:', apiList.length, 'items');
+                        }
+                        if (config.dramaSites && config.dramaSites.length > 0) {
+                            dramaSites = config.dramaSites;
+                            console.log('[Settings] Loaded dramaSites from JSON config:', dramaSites.length, 'sites');
+                            // 同步回localStorage作为备份
+                            localStorage.setItem('dramaSites', JSON.stringify(dramaSites));
+                            localStorage.setItem('apiList', JSON.stringify(apiList));
+                        }
+                        return; // 从配置文件成功加载，跳过 localStorage
+                    }
+                } catch (e) {
+                    console.warn('[Settings] Failed to load JSON config, falling back to localStorage:', e);
+                }
+            }
+
+            // 回退：从 localStorage 读取
             const savedApis = localStorage.getItem('apiList');
             const savedDramas = localStorage.getItem('dramaSites');
 
@@ -147,16 +255,31 @@ const SettingsManager = {
                     localStorage.setItem('dramaSites', JSON.stringify(dramaSites));
                 }
             }
+            // 去重：防止配置数据中出现重复项
+            apiList = deduplicateList(apiList);
+            dramaSites = deduplicateList(dramaSites);
         } catch (e) {
             console.error('Failed to load settings:', e);
         }
     },
     save(newApis, newDramas) {
         try {
+            // 保存前先去重
+            newApis = deduplicateList(newApis);
+            newDramas = deduplicateList(newDramas);
+            // 1. 保存到 localStorage（渲染进程本地缓存）
             localStorage.setItem('apiList', JSON.stringify(newApis));
             localStorage.setItem('dramaSites', JSON.stringify(newDramas));
             apiList = newApis;
             dramaSites = newDramas;
+
+            // 2. 同步写入JSON配置文件（主进程持久化，重启不丢失）
+            const config = { apiList: newApis, dramaSites: newDramas };
+            if (window.voidAPI && window.voidAPI.saveUserConfig) {
+                window.voidAPI.saveUserConfig(config);
+                console.log('[Settings] Config synced to JSON file (persistent).');
+            }
+
             return true;
         } catch (e) {
             console.error('Failed to save settings:', e);
@@ -169,35 +292,34 @@ const SettingsManager = {
         apiList = [...DEFAULT_API_LIST];
         dramaSites = [...DEFAULT_DRAMA_SITES];
     },
-    // Helper to parse textarea into objects
+    // Helper to parse textarea into objects (支持分辨率和状态字段)
     parseInput(text) {
         return text.split('\n')
             .map(line => line.trim())
             .filter(line => line.includes('|'))
             .map(line => {
-                const [label, value] = line.split('|');
-                return { label: label.trim(), value: value.trim() };
+                const parts = line.split('|');
+                const label = parts[0]?.trim() || '';
+                const value = parts[1]?.trim() || '';
+                const resolution = parts[2]?.trim() || 'unknown';
+                const status = parts[3]?.trim() || 'active';
+                return { label, value, resolution, status };
             });
     },
-    // Helper to format objects for textarea
+    // Helper to format objects for textarea (包含分辨率和状态)
     formatForInput(list) {
-        return list.map(item => `${item.label}|${item.value}`).join('\n');
+        return list.map(item => {
+            const resolution = item.resolution || 'unknown';
+            const status = item.status || 'active';
+            return `${item.label}|${item.value}|${resolution}|${status}`;
+        }).join('\n');
     }
 };
 
-SettingsManager.load();
-
+// --- 异步加载用户配置并初始化 UI ---
 const platformSelect = document.getElementById('platform-select');
 const apiSelect = document.getElementById('api-select');
 
-function populateSelect(selectElement, items) {
-    items.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item.value;
-        option.textContent = item.label;
-        selectElement.appendChild(option);
-    });
-}
 
 function triggerParse() {
     console.log(`[Renderer] Attempting to trigger parse. isCurrentlyParsing: ${isCurrentlyParsing}, currentVideoUrl: ${currentVideoUrl}`);
@@ -252,29 +374,72 @@ function parseYoukuUrl() {
     }
 }
 
-function navigateTo(url, isPlatformSwitch = false, themeVars = null) {
-    loadingOverlay.classList.remove('hidden');
-    // Force sync the address bar immediately
-    urlInput.value = url;
-    currentVideoUrl = url;
-    isCurrentlyParsing = false;
-
-    window.voidAPI.navigate(url, isPlatformSwitch, themeVars);
-
-    // Sync quick-drama-select if we are in drama mode
-    if (container.classList.contains('drama-mode')) {
-        const dramaSite = dramaSites.find(site => url.startsWith(site.value));
-        if (dramaSite) {
-            quickDramaSelect.value = dramaSite.value;
-        }
+(async () => {
+    console.log('[Renderer] IIFE started');
+    try {
+        await SettingsManager.load();
+        console.log('[Renderer] SettingsManager.load() completed');
+    } catch (err) {
+        console.error('[Renderer] SettingsManager.load() failed:', err);
+        // 继续使用默认配置，不阻止 UI 初始化
+        // 注意：不能重新赋值 const 变量，这里只是确保后续逻辑使用默认值
+        console.log('[Renderer] Using DEFAULT config due to load failure');
     }
+
+    // --- 分辨率筛选 ---
+    // 根据筛选值过滤接口列表
+function filterApisByResolution(resolution) {
+    const activeApis = apiList.filter(api => api.status !== 'deprecated');
+    if (resolution === 'all') return activeApis;
+    return activeApis.filter(api => (api.resolution || 'unknown') === resolution);
 }
+
+// 分辨率筛选下拉框事件
+resolutionFilter.addEventListener('change', () => {
+    const resolution = resolutionFilter.value;
+    const filteredApis = filterApisByResolution(resolution);
+    // 更新两个接口选择器
+    [apiSelect, quickApiSelect].forEach(sel => {
+        sel.innerHTML = '';
+        if (resolution === 'all') {
+            // 全部分辨率时按分组显示
+            RESOLUTION_GROUPS.forEach(group => {
+                const groupApis = filteredApis.filter(api => (api.resolution || 'unknown') === group.key);
+                if (groupApis.length === 0) return;
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = group.label;
+                groupApis.forEach(api => {
+                    const option = document.createElement('option');
+                    option.value = api.value;
+                    option.textContent = api.label;
+                    optgroup.appendChild(option);
+                });
+                sel.appendChild(optgroup);
+            });
+        } else {
+            populateSelect(sel, filteredApis);
+        }
+    });
+});
+
+// --- 接口搜索按钮 ---
+searchApiButton.addEventListener('click', () => {
+    searchAndFetchApiList();
+});
+
+// --- 接口可用性检测按钮 ---
+checkApiButton.addEventListener('click', () => {
+    checkAllApiAvailability();
+});
+
+
 
 populateSelect(platformSelect, platforms);
 populateSelect(apiSelect, apiList);
 populateSelect(quickPlatformSelect, platforms);
 populateSelect(quickApiSelect, apiList);
 populateSelect(quickDramaSelect, dramaSites);
+})(); // --- 异步配置加载完成，UI 初始化完毕 ---
 
 // --- Selector Synchronization ---
 function syncSelectors(source, target) {
@@ -282,18 +447,13 @@ function syncSelectors(source, target) {
 }
 
 platformSelect.addEventListener('change', (event) => {
+    console.log('[Renderer] platformSelect change event fired, value:', event.target.value);
     syncSelectors(platformSelect, quickPlatformSelect);
     const selectedPlatform = event.target.value;
     isCurrentlyParsing = false;
     currentYoukuUrl = '';
-    if (selectedPlatform === 'https://www.youku.com') {
-        youkuCustomPage.style.display = 'flex';
-        urlInput.value = '';
-        window.voidAPI.setViewVisibility(false);
-    } else {
-        youkuCustomPage.style.display = 'none';
-        navigateTo(selectedPlatform, true);
-    }
+    // 优酷直接导航到主页，不再显示自定义输入页
+    navigateTo(selectedPlatform, true);
 });
 
 quickPlatformSelect.addEventListener('change', () => {
@@ -302,10 +462,7 @@ quickPlatformSelect.addEventListener('change', () => {
 });
 
 apiSelect.addEventListener('change', () => {
-    syncSelectors(apiSelect, quickApiSelect);
-    if (platformSelect.value !== 'https://www.youku.com') {
-        triggerParse();
-    }
+    triggerParse();
 });
 
 quickApiSelect.addEventListener('change', () => {
@@ -328,16 +485,11 @@ urlInput.addEventListener('keydown', (e) => e.key === 'Enter' && goButton.click(
 parseButton.addEventListener('click', () => {
     // 立即显示加载状态，提升响应速度
     loadingOverlay.classList.remove('hidden');
-
-    if (platformSelect.value === 'https://www.youku.com') {
-        parseYoukuUrl();
-    } else {
-        isCurrentlyParsing = true;
-        // 使用requestAnimationFrame确保UI更新后再执行解析
-        requestAnimationFrame(() => {
-            triggerParse();
-        });
-    }
+    isCurrentlyParsing = true;
+    // 使用requestAnimationFrame确保UI更新后再执行解析
+    requestAnimationFrame(() => {
+        triggerParse();
+    });
 });
 
 apiSelect.addEventListener('change', () => {
@@ -381,13 +533,7 @@ homeButton.addEventListener('click', () => {
         }
     } else {
         const homeUrl = platformSelect.value;
-        if (homeUrl === 'https://www.youku.com') {
-            youkuCustomPage.style.display = 'flex';
-            window.voidAPI.setViewVisibility(false);
-            urlInput.value = '';
-        } else {
-            navigateTo(homeUrl, true);
-        }
+        navigateTo(homeUrl, true);
     }
 });
 
@@ -432,6 +578,15 @@ window.voidAPI.onUrlUpdate((url) => {
             previousVideoUrl && previousVideoUrl !== url &&
             platformSelect.value === 'https://www.mgtv.com') {
             console.log('Mango TV episode changed, auto-parsing:', url);
+            isCurrentlyParsing = true;
+            triggerParse();
+        }
+
+        // 如果是优酷视频页面且URL发生了变化，自动触发解析
+        if (url.includes('youku.com/v_show/') &&
+            previousVideoUrl && previousVideoUrl !== url &&
+            platformSelect.value === 'https://www.youku.com') {
+            console.log('Youku episode changed, auto-parsing:', url);
             isCurrentlyParsing = true;
             triggerParse();
         }
@@ -520,6 +675,7 @@ function updateDOMForTheme(isSwitchingToDrama) {
 }
 
 function navigateForTheme(isSwitchingToDrama) {
+    console.log('[Renderer] navigateForTheme called, isSwitchingToDrama:', isSwitchingToDrama);
     const theme = isSwitchingToDrama ? {
         '--av-primary-bg': '#000000',
         '--av-accent-color': '#333333',
@@ -533,14 +689,16 @@ function navigateForTheme(isSwitchingToDrama) {
         ? (dramaSites.length > 0 ? dramaSites[0].value : '')
         : platformSelect.value;
 
-    if (!url) return; // Safety check
+    console.log('[Renderer] navigateForTheme URL:', url, 'dramaSites count:', dramaSites.length);
 
-    window.voidAPI.setViewVisibility(false);
-    if (url === 'https://www.youku.com' && !isSwitchingToDrama) {
-        youkuCustomPage.style.display = 'flex';
-    } else {
-        navigateTo(url, !isSwitchingToDrama, theme);
+    if (!url) {
+        console.warn('[Renderer] navigateForTheme: URL is empty, aborting.');
+        showToast('没有可用的影视站点', 'error');
+        return; // Safety check
     }
+
+    // 优酷现在直接显示主页，不再使用自定义输入页
+    navigateTo(url, !isSwitchingToDrama, theme);
 }
 
 dramaModeButton.addEventListener('click', (event) => {
@@ -593,12 +751,7 @@ function openSettings() {
 
 function closeSettingsPage() {
     settingsPage.style.display = 'none';
-    // Re-show view if we are NOT on youku custom page
-    // Using style.display check but falling back to checking if it's explicitly not 'flex'
-    // since we use 'flex' for showing it.
-    if (youkuCustomPage.style.display !== 'flex') {
-        window.voidAPI.setViewVisibility(true);
-    }
+    window.voidAPI.setViewVisibility(true);
 }
 
 settingsButton.addEventListener('click', openSettings);
@@ -638,9 +791,9 @@ saveSettings.addEventListener('click', () => {
     const newApis = SettingsManager.parseInput(parsingListInput.value);
     const newDramas = SettingsManager.parseInput(dramaListInput.value);
 
-    // Enforce 4-site limit for Drama Mode
-    if (newDramas.length > 4) {
-        showToast('影视导航最多只能添加 4 个网站，请删减后再保存。', 'error');
+    // Enforce 5-site limit for Drama Mode
+    if (newDramas.length > 5) {
+        showToast('影视导航最多只能添加 5 个网站，请删减后再保存。', 'error');
         return;
     }
 
@@ -666,10 +819,29 @@ if (resetSettings) {
 }
 
 function refreshDynamicUI() {
-    // Clear and re-populate selects
+    // Clear and re-populate selects - 按分辨率分组填充
     [apiSelect, quickApiSelect].forEach(sel => {
         sel.innerHTML = '';
-        populateSelect(sel, apiList);
+        // 按分辨率分组添加接口
+        const activeApis = apiList.filter(api => api.status !== 'deprecated');
+        RESOLUTION_GROUPS.forEach(group => {
+            const groupApis = activeApis.filter(api => (api.resolution || 'unknown') === group.key);
+            if (groupApis.length === 0) return;
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = group.label;
+            groupApis.forEach(api => {
+                const option = document.createElement('option');
+                option.value = api.value;
+                const statusTag = api.status === 'deprecated' ? ' [已弃用]' : '';
+                option.textContent = api.label + statusTag;
+                optgroup.appendChild(option);
+            });
+            sel.appendChild(optgroup);
+        });
+        // 如果分组为空，回退到平铺
+        if (sel.options.length === 0) {
+            populateSelect(sel, activeApis);
+        }
     });
 
     quickDramaSelect.innerHTML = '';
@@ -677,6 +849,93 @@ function refreshDynamicUI() {
 
     // Refresh sidebar drama site buttons if needed
     refreshDramaSidebar();
+}
+
+// --- 接口搜索功能 ---
+// 从已知接口仓库自动搜索并获取视频解析接口
+const API_SOURCE_URLS = [
+    'https://raw.githubusercontent.com/RemotePinee/AudioVisual/main/api-list.json',
+];
+
+async function searchAndFetchApiList() {
+    showToast('正在搜索视频解析接口...', 'info');
+    const newApis = [];
+    for (const sourceUrl of API_SOURCE_URLS) {
+        try {
+            const response = await fetch(sourceUrl);
+            if (response.ok) {
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    data.forEach(api => {
+                        if (!newApis.some(a => a.value === api.value) && !DEFAULT_API_LIST.some(a => a.value === api.value)) {
+                            newApis.push({ ...api, status: 'active' });
+                        }
+                    });
+                }
+            }
+        } catch (e) {
+            console.log('[ApiSearch] Failed to fetch from:', sourceUrl, e);
+        }
+    }
+    if (newApis.length > 0) {
+        const mergedApis = [...DEFAULT_API_LIST, ...newApis];
+        SettingsManager.save(mergedApis, dramaSites);
+        refreshDynamicUI();
+        showToast(`发现 ${newApis.length} 个新接口！`, 'success');
+    } else {
+        showToast('暂未发现新的解析接口', 'info');
+    }
+    return newApis;
+}
+
+// --- 失效接口检测 ---
+// 通过尝试加载解析接口页面来检测是否可用
+async function checkApiAvailability(apiUrl) {
+    try {
+        const testUrl = apiUrl + 'https://www.iqiyi.com/v_test.html'; // 构造测试URL
+        const request = await fetch(testUrl, {
+            method: 'HEAD',
+            mode: 'no-cors',
+            signal: AbortSignal.timeout(5000)
+        });
+        return true; // no-cors 模式下只要不抛异常就认为可达
+    } catch (e) {
+        return false;
+    }
+}
+
+async function checkAllApiAvailability() {
+    showToast('正在检测接口可用性...', 'info');
+    let deprecatedCount = 0;
+    const updatedApis = apiList.map(api => {
+        // 标记为已弃用的接口不重复检测
+        if (api.status === 'deprecated') return api;
+        return { ...api, status: 'active' };
+    });
+
+    for (let i = 0; i < updatedApis.length; i++) {
+        const api = updatedApis[i];
+        try {
+            const response = await fetch(api.value, {
+                method: 'HEAD',
+                mode: 'no-cors',
+                signal: AbortSignal.timeout(5000)
+            });
+            // no-cors 模式下 response.type 是 'opaque'，只要没抛异常就算可达
+        } catch (e) {
+            // 超时或网络错误说明接口可能失效
+            updatedApis[i].status = 'deprecated';
+            deprecatedCount++;
+        }
+    }
+
+    if (deprecatedCount > 0) {
+        SettingsManager.save(updatedApis, dramaSites);
+        refreshDynamicUI();
+        showToast(`检测完成：${deprecatedCount} 个接口已标记为失效`, 'error');
+    } else {
+        showToast('所有接口均可正常使用', 'success');
+    }
 }
 
 function refreshDramaSidebar() {
@@ -697,7 +956,15 @@ function refreshDramaSidebar() {
 
     // Re-attach listeners to new buttons
     dramaControls.querySelectorAll('.custom-drama-btn').forEach(btn => {
-        btn.addEventListener('click', () => navigateTo(btn.dataset.url));
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const url = btn.dataset.url;
+            console.log('[Renderer] Drama button clicked! URL:', url);
+            // 临时诊断：确认点击事件能到达这里
+            btn.style.outline = '3px solid red';
+            setTimeout(() => { btn.style.outline = ''; }, 500);
+            navigateTo(url);
+        });
     });
 }
 
@@ -707,6 +974,14 @@ function refreshDramaSidebar() {
 
 
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[Renderer] DOMContentLoaded fired.');
+    console.log('[Renderer] platformSelect found:', !!platformSelect);
+    console.log('[Renderer] dramaModeButton found:', !!dramaModeButton);
+    console.log('[Renderer] parseButton found:', !!parseButton);
+    // 立即淡入页面，不等 window.load 事件（图片加载慢会导致长时间空白）
+    const container = document.querySelector('.container');
+    if (container) container.classList.add('loaded');
+    
     const externalLink = document.querySelector('.footer a');
     if (externalLink) {
         externalLink.addEventListener('click', (event) => {

@@ -41,5 +41,15 @@ contextBridge.exposeInMainWorld('voidAPI', {
   onUpdateDevMode: (callback) => ipcRenderer.on('update-dev-mode', (event, ...args) => callback(...args)),
   closeWindow: () => ipcRenderer.send('close-window'),
   toggleSidebar: (isCollapsed) => ipcRenderer.send('sidebar-toggle', isCollapsed),
-  showWindow: () => ipcRenderer.send('show-window'),
+
+  // 网址自动更新相关
+  checkAndUpdateSite: (originalUrl) => ipcRenderer.send('check-and-update-site', originalUrl),
+  checkAllSites: (sites) => ipcRenderer.send('check-all-sites', sites),
+  getSiteUrlMappings: () => ipcRenderer.invoke('get-site-url-mappings'),
+  onSiteUrlUpdated: (callback) => ipcRenderer.on('site-url-updated', (event, ...args) => callback(...args)),
+  onSitesCheckResults: (callback) => ipcRenderer.on('sites-check-results', (event, ...args) => callback(...args)),
+
+  // 用户配置文件持久化同步
+  saveUserConfig: (config) => ipcRenderer.send('save-user-config', config),
+  getUserConfig: () => ipcRenderer.invoke('get-user-config'),
 });
