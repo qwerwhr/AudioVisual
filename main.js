@@ -1114,7 +1114,7 @@ function initializeAutoUpdater() {
 
   console.log('[AutoUpdater] Initializing auto updater...');
   console.log('[AutoUpdater] Current version:', app.getVersion());
-  console.log('[AutoUpdater] Update feed URL:', `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`);
+  console.log('[AutoUpdater] Update feed URL:', `https://github.com/${MIRROR_NODES.github.owner}/${MIRROR_NODES.github.repo}`);
 
   autoUpdater.on('checking-for-update', () => {
     console.log('[AutoUpdater] Checking for updates...');
