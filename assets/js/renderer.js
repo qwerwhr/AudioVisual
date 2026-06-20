@@ -1023,19 +1023,36 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.voidAPI.onUpdateAvailable((info) => {
-        console.log('[Renderer] Update available:', info.version);
+        console.log('[Renderer] Update available:', info.version, 'isManual:', info.isManual);
         checkUpdateButton.disabled = false;
         checkUpdateButton.textContent = '检查更新';
         showUpdateNotification(`🎉 发现新版本 ${info.version}！点击此处开始下载。`, 'available', true);
         const notificationDiv = updateNotificationArea.querySelector('div');
         notificationDiv.style.cursor = 'pointer';
         notificationDiv.onclick = function () {
-            showUpdateNotification("⏬ 正在下载更新...", 'info', true);
-            window.voidAPI.downloadUpdate();
-            const newDiv = updateNotificationArea.querySelector('div');
-            if (newDiv) {
-                newDiv.onclick = null;
-                newDiv.style.cursor = 'default';
+            if (info.isManual) {
+                // jsDelivr 等手动更新模式：使用手动下载
+                showUpdateNotification("⏬ 正在从镜像下载更新...", 'info', true);
+                window.voidAPI.manualDownloadUpdate(info).then(result => {
+                    console.log('[Renderer] Manual download started:', result);
+                }).catch(err => {
+                    console.error('[Renderer] Manual download failed:', err);
+                    showUpdateNotification('⚠️ 下载失败：' + (err.message || err), 'error', false);
+                });
+                const newDiv = updateNotificationArea.querySelector('div');
+                if (newDiv) {
+                    newDiv.onclick = null;
+                    newDiv.style.cursor = 'default';
+                }
+            } else {
+                // 官方源模式：使用 electron-updater 下载
+                showUpdateNotification("⏬ 正在下载更新...", 'info', true);
+                window.voidAPI.downloadUpdate();
+                const newDiv = updateNotificationArea.querySelector('div');
+                if (newDiv) {
+                    newDiv.onclick = null;
+                    newDiv.style.cursor = 'default';
+                }
             }
         };
     });
@@ -1064,6 +1081,19 @@ document.addEventListener('DOMContentLoaded', () => {
         notificationDiv.style.cursor = 'pointer';
         notificationDiv.onclick = function () {
             window.voidAPI.quitAndInstall();
+        };
+    });
+
+    // jsDelivr 手动下载完成
+    window.voidAPI.onManualUpdateDownloaded((info) => {
+        console.log('[Renderer] Manual update downloaded:', info.filePath);
+        checkUpdateButton.disabled = false;
+        checkUpdateButton.textContent = '检查更新';
+        showUpdateNotification("✅ 更新已下载完成！点击此处安装。", 'success', true);
+        const notificationDiv = updateNotificationArea.querySelector('div');
+        notificationDiv.style.cursor = 'pointer';
+        notificationDiv.onclick = function () {
+            window.voidAPI.manualInstallUpdate(info.filePath);
         };
     });
 
@@ -1153,9 +1183,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const manualUpdateCancel = document.getElementById('manual-update-cancel');
 
     const MIRROR_NODES = [
-        { id: 'github', name: '官方源 (GitHub)', desc: '官方源，需网络连通 GitHub', type: 'github' },
-        { id: 'gitcode', name: 'GitCode 镜像', desc: '国内节点，速度较快', type: 'generic', url: 'https://gitcode.com/qwerwhr/AudioVisual-releases/raw/main/' },
-        { id: 'custom', name: '自定义镜像', desc: '输入自定义镜像地址', type: 'custom' }
+        { id: 'github', name: '官方源 (GitHub)', desc: '默认官方源，需访问 GitHub', type: 'github' },
+        { id: 'jsdelivr', name: 'jsDelivr CDN', desc: '国内加速，推荐优先使用', type: 'jsdelivr' },
+        { id: 'gitcode', name: 'GitCode 镜像', desc: 'GitCode 仓库托管', type: 'generic', url: 'https://gitcode.com/qwerwhr/AudioVisual-releases/raw/main/' },
+        { id: 'custom', name: '自定义地址', desc: '输入自定义镜像地址', type: 'custom' }
     ];
 
     let selectedMirrorId = 'github';
@@ -1213,6 +1244,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedNode.type === 'github') {
             mirrorConfig.owner = 'qwerwhr';
             mirrorConfig.repo = 'AudioVisual';
+        } else if (selectedNode.type === 'jsdelivr') {
+            mirrorConfig.url = 'https://cdn.jsdelivr.net/gh/qwerwhr/AudioVisual@main/';
         } else if (selectedNode.type === 'generic') {
             mirrorConfig.url = selectedNode.url;
         } else if (selectedNode.type === 'custom') {

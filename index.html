@@ -483,6 +483,34 @@
             </div>
         </div>
     </div>
+
+    <!-- 镜像选择对话框 -->
+    <div id="mirror-dialog" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="width: 420px;">
+            <div class="modal-header">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                <h3>选择更新镜像</h3>
+            </div>
+            <div class="modal-body">
+                <p style="margin: 0 0 12px 0; font-size: 13px; color: var(--text-secondary);">
+                    检查更新超时或失败，请选择镜像节点后重试：
+                </p>
+                <div id="mirror-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;"></div>
+                <div id="mirror-custom" style="display: none; margin-top: 8px;">
+                    <input type="text" id="mirror-custom-url" placeholder="https://your-mirror.com/owner/repo/latest.yml"
+                           style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); font-size: 13px;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="mirror-cancel" class="modal-button secondary">取消</button>
+                <button id="mirror-confirm" class="modal-button primary">使用此节点并更新</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

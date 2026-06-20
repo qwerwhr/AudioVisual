@@ -1,0 +1,12 @@
+{
+  "version": "1.1.6",
+  "tag": "v1.1.6",
+  "releaseDate": "2026-06-20",
+  "changelog": "添加 jsDelivr CDN 镜像支持，更新检查更快速",
+  "files": {
+    "windows-exe": "https://github.com/qwerwhr/AudioVisual/releases/download/v1.1.6/AudioVisual-1.1.6-setup.exe",
+    "windows-msi": "https://github.com/qwerwhr/AudioVisual/releases/download/v1.1.6/AudioVisual-1.1.6.msi",
+    "macos-dmg": "https://github.com/qwerwhr/AudioVisual/releases/download/v1.1.6/AudioVisual-1.1.6.dmg",
+    "linux-deb": "https://github.com/qwerwhr/AudioVisual/releases/download/v1.1.6/audiovisual_1.1.6_amd64.deb"
+  }
+}

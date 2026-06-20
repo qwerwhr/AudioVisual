@@ -9,9 +9,10 @@ const { autoUpdater } = require('electron-updater');
 
 // --- 镜像节点配置 ---
 const MIRROR_NODES = {
-  github:  { type: 'github',  owner: 'qwerwhr', repo: 'AudioVisual' },
-  gitcode: { type: 'generic', url: 'https://gitcode.com/qwerwhr/AudioVisual-releases/raw/main/' },
-  custom: { type: 'custom',  url: null }
+  github:  { type: 'github',  owner: 'qwerwhr', repo: 'AudioVisual', label: '官方源 (GitHub)', desc: '默认官方源，需访问 GitHub' },
+  jsdelivr: { type: 'jsdelivr', url: 'https://cdn.jsdelivr.net/gh/qwerwhr/AudioVisual@releases/', label: 'jsDelivr CDN', desc: '国内加速，推荐优先使用' },
+  gitcode: { type: 'generic', url: 'https://gitcode.com/qwerwhr/AudioVisual-releases/raw/main/', label: 'GitCode 镜像', desc: 'GitCode 仓库托管' },
+  custom: { type: 'custom',  url: null, label: '自定义地址', desc: '输入自定义镜像地址' }
 };
 let currentMirrorType = 'github';
 let currentMirrorURL = null;  // 仅 custom 类型时使用
@@ -900,6 +901,9 @@ ipcMain.handle('set-update-mirror', (event, config) => {
   if (config.type === 'github') {
     currentMirrorType = 'github';
     currentMirrorURL = null;
+  } else if (config.type === 'jsdelivr') {
+    currentMirrorType = 'jsdelivr';
+    currentMirrorURL = config.url || 'https://cdn.jsdelivr.net/gh/qwerwhr/AudioVisual@main/';
   } else if (config.type === 'generic') {
     currentMirrorType = 'generic';
     currentMirrorURL = config.url;
@@ -979,6 +983,121 @@ ipcMain.handle('manual-check-update', async (event, mirrorURL) => {
 
     request.end();
   });
+});
+
+// --- 手动下载更新（jsDelivr 镜像等） ---
+ipcMain.handle('manual-download-update', async (event, updateInfo) => {
+  const files = updateInfo.files || {};
+  let downloadURL = null;
+  
+  // 根据平台选择合适的下载URL
+  if (process.platform === 'win32') {
+    downloadURL = files['windows-exe'] || files['windows-msi'];
+  } else if (process.platform === 'darwin') {
+    downloadURL = files['macos-dmg'];
+  } else if (process.platform === 'linux') {
+    downloadURL = files['linux-deb'];
+  }
+  
+  if (!downloadURL) {
+    throw new Error('未找到适用于当前平台的安装包');
+  }
+  
+  console.log('[ManualDownload] Downloading from:', downloadURL);
+  
+  // 发送进度事件
+  const sendProgress = (percent, transferred, total) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('manual-update-progress', {
+        percent, transferred, total
+      });
+    }
+  };
+  
+  sendProgress(0, 0, 0);
+  
+  // 下载文件到临时目录
+  const https = require('https');
+  const http = require('http');
+  const fs = require('fs');
+  const path = require('path');
+  
+  const tempDir = app.getPath('temp');
+  const fileName = path.basename(new URL(downloadURL).pathname) || `AudioVisual-Setup.exe`;
+  const tempFilePath = path.join(tempDir, fileName);
+  
+  return new Promise((resolve, reject) => {
+    const protocol = downloadURL.startsWith('https') ? https : http;
+    
+    const file = fs.createWriteStream(tempFilePath);
+    let downloadedBytes = 0;
+    let totalBytes = 0;
+    
+    const request = protocol.get(downloadURL, (response) => {
+      if (response.statusCode !== 200) {
+        file.close();
+        fs.unlinkSync(tempFilePath);
+        return reject(new Error('下载失败，状态码: ' + response.statusCode));
+      }
+      
+      totalBytes = parseInt(response.headers['content-length']) || 0;
+      sendProgress(0, 0, totalBytes);
+      
+      response.on('data', (chunk) => {
+        downloadedBytes += chunk.length;
+        const percent = totalBytes > 0 ? Math.floor((downloadedBytes / totalBytes) * 100) : 0;
+        sendProgress(percent, downloadedBytes, totalBytes);
+      });
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close(() => {
+          console.log('[ManualDownload] Download complete:', tempFilePath);
+          sendProgress(100, totalBytes, totalBytes);
+          
+          // 通知渲染进程下载完成
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('manual-update-downloaded', {
+              filePath: tempFilePath,
+              fileName: fileName
+            });
+          }
+          
+          resolve({ success: true, filePath: tempFilePath });
+        });
+      });
+    });
+    
+    request.on('error', (err) => {
+      file.close();
+      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+      console.error('[ManualDownload] Download error:', err);
+      reject(err);
+    });
+    
+    file.on('error', (err) => {
+      file.close();
+      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+      console.error('[ManualDownload] File error:', err);
+      reject(err);
+    });
+  });
+});
+
+ipcMain.on('manual-install-update', (event, filePath) => {
+  console.log('[ManualInstall] Installing update from:', filePath);
+  if (process.platform === 'win32') {
+    const { spawn } = require('child_process');
+    spawn(filePath, ['/S'], { detached: true, stdio: 'ignore' });
+    app.quit();
+  } else if (process.platform === 'darwin') {
+    const { exec } = require('child_process');
+    exec(`open "${filePath}"`);
+    app.quit();
+  } else {
+    shell.openPath(filePath);
+  }
 });
 
 // 简单版本比较函数
@@ -1208,6 +1327,7 @@ function checkUpdate() {
 
   console.log('[AutoUpdater] Manually checking for updates...');
   console.log('[AutoUpdater] App is packed:', isAppPacked);
+  console.log('[AutoUpdater] Current mirror type:', currentMirrorType);
 
   // 开发模式下的特殊处理
   if (!isAppPacked) {
@@ -1221,9 +1341,15 @@ function checkUpdate() {
     return;
   }
 
-  // 设置30秒超时，防止一直卡住
+  // jsDelivr 镜像：使用自定义更新检查（通过 latest.json）
+  if (currentMirrorType === 'jsdelivr') {
+    checkUpdateViaJsDelivr();
+    return;
+  }
+
+  // 设置10秒超时，防止一直卡住
   updateCheckTimeout = setTimeout(() => {
-    console.error('[AutoUpdater] Check timeout after 30 seconds');
+    console.error('[AutoUpdater] Check timeout after 10 seconds');
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-error', {
         message: '检查更新超时，请检查网络连接或稍后重试。',
@@ -1265,4 +1391,100 @@ function checkUpdate() {
       });
     }
   }
+}
+
+// --- jsDelivr 自定义更新检查 ---
+function checkUpdateViaJsDelivr() {
+  const baseURL = currentMirrorURL || 'https://cdn.jsdelivr.net/gh/qwerwhr/AudioVisual@main/';
+  const latestJsonURL = baseURL + 'latest.json';
+  
+  console.log('[JsDelivr] Checking for updates via:', latestJsonURL);
+  
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-checking');
+  }
+
+  const request = net.request({
+    method: 'GET',
+    url: latestJsonURL,
+    session: session.defaultSession
+  });
+
+  let data = '';
+  request.on('response', (response) => {
+    if (updateCheckTimeout) {
+      clearTimeout(updateCheckTimeout);
+      updateCheckTimeout = null;
+    }
+
+    if (response.statusCode !== 200) {
+      console.error('[JsDelivr] Failed to fetch latest.json, status:', response.statusCode);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-error', {
+          message: '无法获取更新信息 (jsDelivr)，状态码: ' + response.statusCode,
+          code: 'HTTP_' + response.statusCode
+        });
+        mainWindow.webContents.send('update-timeout');
+      }
+      return;
+    }
+
+    response.on('data', (chunk) => { data += chunk; });
+    response.on('end', () => {
+      try {
+        const latestInfo = JSON.parse(data);
+        const latestVersion = latestInfo.version;
+        const currentVersion = app.getVersion();
+        
+        console.log('[JsDelivr] Current:', currentVersion, 'Latest:', latestVersion);
+        
+        const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
+        
+        if (hasUpdate) {
+          manualUpdateInfo = latestInfo;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-available', {
+              version: latestVersion,
+              releaseDate: latestInfo.releaseDate,
+              changelog: latestInfo.changelog,
+              isManual: true,
+              files: latestInfo.files
+            });
+          }
+        } else {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-not-available', {
+              version: latestVersion,
+              message: '已是最新版本'
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[JsDelivr] Failed to parse latest.json:', e);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update-error', {
+            message: '解析更新信息失败: ' + e.message,
+            code: 'PARSE_ERROR'
+          });
+        }
+      }
+    });
+  });
+
+  request.on('error', (err) => {
+    if (updateCheckTimeout) {
+      clearTimeout(updateCheckTimeout);
+      updateCheckTimeout = null;
+    }
+    console.error('[JsDelivr] Request error:', err);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-error', {
+        message: '检查更新失败: ' + err.message,
+        code: err.code || 'NETWORK_ERROR'
+      });
+      mainWindow.webContents.send('update-timeout');
+    }
+  });
+
+  request.end();
 }

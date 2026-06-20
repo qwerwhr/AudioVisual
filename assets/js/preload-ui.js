@@ -45,6 +45,9 @@ contextBridge.exposeInMainWorld('voidAPI', {
   // 手动更新（镜像下载）相关
   onManualUpdateProgress: (callback) => ipcRenderer.on('manual-update-progress', (event, ...args) => callback(...args)),
   onManualUpdateDownloaded: (callback) => ipcRenderer.on('manual-update-downloaded', (event, ...args) => callback(...args)),
+  // jsDelivr 手动下载安装
+  manualDownloadUpdate: (updateInfo) => ipcRenderer.invoke('manual-download-update', updateInfo),
+  manualInstallUpdate: (filePath) => ipcRenderer.send('manual-install-update', filePath),
   closeWindow: () => ipcRenderer.send('close-window'),
   toggleSidebar: (isCollapsed) => ipcRenderer.send('sidebar-toggle', isCollapsed),
 
