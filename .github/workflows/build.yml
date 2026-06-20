@@ -161,9 +161,27 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout main
-          cp latest.json latest.json
+          git pull origin main
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG_NAME#v}"
+          echo "Generating latest.json for version $VERSION on main branch"
+          cat > latest.json << EOF
+          {
+            "version": "$VERSION",
+            "tag": "$TAG_NAME",
+            "releaseDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "changelog": "",
+            "files": {
+              "windows-exe": "https://github.com/qwerwhr/AudioVisual/releases/download/$TAG_NAME/AudioVisual-${VERSION}-setup.exe",
+              "windows-msi": "https://github.com/qwerwhr/AudioVisual/releases/download/$TAG_NAME/AudioVisual-${VERSION}.msi",
+              "macos-dmg": "https://github.com/qwerwhr/AudioVisual/releases/download/$TAG_NAME/AudioVisual-${VERSION}.dmg",
+              "linux-deb": "https://github.com/qwerwhr/AudioVisual/releases/download/$TAG_NAME/audiovisual_${VERSION}_amd64.deb"
+            }
+          }
+          EOF
+          cat latest.json
           git add latest.json
-          git commit -m "chore: update latest.json for v${GITHUB_REF#refs/tags/v}" || echo "No changes to commit"
+          git commit -m "chore: update latest.json for v${VERSION}" || echo "No changes to commit"
           git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
