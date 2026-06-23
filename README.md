@@ -50,7 +50,7 @@
 
 1. **克隆项目**
    ```bash
-   git clone https://github.com/RemotePinee/AudioVisual.git
+   git clone https://github.com/qwerwhr/AudioVisual.git
    ```
 
 2. **进入目录**
@@ -140,7 +140,13 @@ npm run dist
 
 ## 📝 更新日志
 
-### v1.0.9 (最新)
+### v1.1.8 (最新)
+- ✨ 修改优酷的反爬虫协议,更改了更新机制加入cdn等
+
+###  v1.1.0 - v1.1.7 (改版,现废弃)
+- ✨ 处理逻辑问题
+
+### v1.0.9 (源版本请前往原作者处)
 - ✨ **Premium 视觉重构**：引入全新自定义 Tooltip 与毛玻璃质感 Modal，彻底告别原生 UI
 - 🚀 **核心稳定性修复**：解决 `MutationObserver` 死循环导致的启动卡死（重要）
 - 📐 **侧边栏布局优化**：引入宽度补偿机制，完美适配各种缩放比例
